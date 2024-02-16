@@ -1,0 +1,54 @@
+heuristic_controller:
+  publish_rate: {
+    type: double,
+    default_value: 50.0,
+    description: 'Rate at which to publish the controller state (Hz). Set to 0 to disable publishing.'
+  }
+
+  imu_sensor_name: {
+    type: string,
+    default_value: 'imu_sensor',
+    description: 'Name of the IMU sensor'
+  }
+
+  kps: {
+    type: double_array,
+    default_value: [],
+    description: 'Position gains for the joints'
+  }
+
+  kds: {
+    type: double_array,
+    default_value: [],
+    description: 'Velocity gains for the joints'
+  }
+
+  init_kps: {
+    type: double_array,
+    default_value: [],
+    description: 'Position gains for the joints during initialization (return to default position)'
+  }
+
+  init_kds: {
+    type: double_array,
+    default_value: [],
+    description: 'Velocity gains for the joints during initialization (return to default position)'
+  }
+
+  init_duration: {
+    type: double,
+    default_value: 2.0,
+    description: 'Time to return to the default position on startup'
+  }
+
+  fade_in_duration: {
+    type: double,
+    default_value: 2.0,
+    description: 'Time to gradually fade in the policy actions on startup'
+  }
+
+  max_body_angle: {
+    type: double,
+    default_value: 0.52,
+    description: 'Maximum body angle (rad) allowed before the controller is reset'
+  }

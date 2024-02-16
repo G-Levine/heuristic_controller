@@ -1,0 +1,7 @@
+<library path="heuristic_controller">
+  <class name="heuristic_controller/HeuristicController" type="heuristic_controller::HeuristicController" base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Heuristic controller
+    </description>
+  </class>
+</library>
