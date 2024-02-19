@@ -74,10 +74,6 @@ controller_interface::CallbackReturn HeuristicController::on_activate(
   }
 
   init_time_ = get_node()->now();
-  repeat_action_counter_ = -1;
-
-  cmd_x_vel_ = params_.default_cmd_x_vel;
-  cmd_yaw_vel_ = params_.default_cmd_yaw_vel;
 
   // Initialize the command subscriber
   cmd_subscriber_ = get_node()->create_subscription<CmdType>(
@@ -143,13 +139,6 @@ controller_interface::return_type HeuristicController::update(
     return controller_interface::return_type::OK;
   }
 
-  // Only get a new action from the policy when repeat_action_counter_ is 0
-  repeat_action_counter_ += 1;
-  repeat_action_counter_ %= params_.repeat_action;
-  if (repeat_action_counter_ != 0) {
-    return controller_interface::return_type::OK;
-  }
-
   // Get the latest commanded velocities
   auto command = rt_command_ptr_.readFromRT();
   if (command && command->get()) {
@@ -206,11 +195,17 @@ controller_interface::return_type HeuristicController::update(
       return controller_interface::return_type::OK;
     }
 
+    control_step();
+
     // Send the action to the hardware interface
     command_interfaces_map_.at(params_.joint_names[i])
-        .at(params_.action_types[i])
+        .at("position")
         .get()
         .set_value((double)action_[i]);
+    // command_interfaces_map_.at(params_.joint_names[i])
+    //     .at("velocity")
+    //     .get()
+    //     .set_value((double)action_[i]);
     command_interfaces_map_.at(params_.joint_names[i])
         .at("kp")
         .get()
@@ -222,6 +217,49 @@ controller_interface::return_type HeuristicController::update(
   }
 
   return controller_interface::return_type::OK;
+}
+
+void control_step() {
+  // Update the target x, y, and yaw positions and velocities
+  target_yaw_ += target_yaw_vel_ * params_.control_period;
+
+  // Calculate the balancing torque
+  double pitch_vel, roll_vel, yaw_vel, orientation_w, orientation_x,
+      orientation_y, orientation_z;
+
+  tf2::Quaternion q(orientation_x, orientation_y, orientation_z,
+                    orientation_w);
+  tf2::Matrix3x3 orientation(q);
+
+  // Construct target orientation matrix from roll, pitch, and yaw
+  tf2::Quaternion q_target;
+  q_target.setRPY(target_roll_, target_pitch_, target_yaw_);
+  tf2::Matrix3x3 orientation_target(q_target);
+
+  orientation_error = orientation.inverse() * orientation_target;
+  // Convert to angle-axis representation
+
+  // orientation_error_torque = orientation_gains * orientation_error
+  // angular_velocity_error_torque = angular_velocity_gains * angular_velocity_error
+
+  // body_torque = orientation_error_torque + angular_velocity_error_torque
+  // body_force = position_gains * position_error
+
+  // Find the least-squares ground reaction forces to produce the desired body
+  // force and torque, given the current positions of the feet and the contact states
+
+  // ground_reaction_forces = ...
+
+  // Loop through the 4 legs
+  for (int i = 0; i < 4; i++) {
+    if in_stance[i] {
+
+    }
+    else {
+
+    }
+
+  }
 }
 
 }  // namespace heuristic_controller
