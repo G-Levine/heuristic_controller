@@ -269,3 +269,17 @@ void estimateDisplacementAndVelocity(
     prevPositionWorldFrame = alphaPos * newPositionWorldFrame + (1 - alphaPos) * prevPositionWorldFrame;
     prevVelocityWorldFrame = alphaVel * newVelocityWorldFrame + (1 - alphaVel) * prevVelocityWorldFrame;
 }
+
+Eigen::Quaterniond extractYawQuaternion(const Eigen::Quaterniond& originalQuat) {
+    // Convert the quaternion to Euler angles (yaw, pitch, roll)
+    Eigen::Vector3d euler = originalQuat.toRotationMatrix().eulerAngles(2, 1, 0); // ZYX convention
+
+    // Extract the yaw component
+    double yaw = euler[0]; // First component is yaw in ZYX convention
+
+    // Create a new quaternion with only the yaw component
+    Eigen::AngleAxisd yawRotation(yaw, Eigen::Vector3d::UnitZ()); // Rotation around Z-axis
+    Eigen::Quaterniond yawQuat(yawRotation);
+
+    return yawQuat;
+}

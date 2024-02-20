@@ -29,8 +29,8 @@ std::tuple<double, double, double> getFutureBodyState(double t, double x0,
 double getNextFootholdRelativeToBody(double stance_time, double body_height,
                                      double v0, double vf) {
   double omega = sqrt(9.81 / body_height);
-  double position = -(vf - v0 * cosh(omega * stance_time)) /
-                    (omega * sinh(omega * stance_time));
+  double position = -(vf - v0) /
+                    (omega * tanh(omega * stance_time));
   return position;
 }
 
