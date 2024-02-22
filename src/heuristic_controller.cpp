@@ -195,23 +195,35 @@ controller_interface::return_type HeuristicController::update(
   }
 
   // If the contact states changed, update the contact centroid position
-  if (curr_control_step_state.contact_states != prev_control_step_state_.contact_states) {
-    auto contact_centroid_pos_delta = contactCentroid(curr_control_step_state.foot_pos_in_world, curr_control_step_state.contact_states, prev_control_step_state_.contact_centroid_pos_in_world) - contactCentroid(curr_control_step_state.foot_pos_in_world, prev_control_step_state_.contact_states, prev_control_step_state_.contact_centroid_pos_in_world);
-    curr_control_step_state.contact_centroid_pos_in_world = prev_control_step_state_.contact_centroid_pos_in_world + contact_centroid_pos_delta
-  }
+  Eigen::Vector3d contact_centroid_pos_delta = calculateAverageContactValue(prev_control_step_state_.foot_pos_in_world, curr_control_step_state.contact_states) - calculateAverageContactValue(prev_control_step_state_.foot_pos_in_world, prev_control_step_state_.contact_states);
+  curr_control_step_state.contact_centroid_pos_in_world = prev_control_step_state_.contact_centroid_pos_in_world + contact_centroid_pos_delta;
 
   // Do state estimation
-  auto[contact_centroid_pos_in_world, body_pos_in_world, body_vel_in_world, foot_pos_in_world, foot_vel_in_world] = stateEstimation(curr_control_step_state, prev_control_step_state_);
-  curr_control_step_state.contact_centroid_pos_in_world = contact_centroid_pos_in_world;
-  curr_control_step_state.body_pos_in_world = body_pos_in_world;
-  curr_control_step_state.body_vel_in_world = body_vel_in_world;
-  curr_control_step_state.foot_pos_in_world = foot_pos_in_world;
-  curr_control_step_state.foot_vel_in_world = foot_vel_in_world;
+  Eigen::Matrix<double, 3, 4> foot_pos_in_body = four_legs_fk(curr_control_step_state.joint_pos);
+  Eigen::Matrix<double, 3, 4> foot_pos_in_body_rotated;
+  Eigen::Matrix<double, 3, 4> foot_vel_in_body;
+  Eigen::Matrix<double, 3, 4> foot_vel_in_body_rotated;
+  for (int i = 0; i < 4; i++) {
+    Eigen::Matrix3d J_leg = leg_jacobian(curr_control_step_state.joint_pos(i, 0), curr_control_step_state.joint_pos(i, 1), curr_control_step_state.joint_pos(i, 2));
+    foot_pos_in_body_rotated.col(i) = curr_control_step_state.body_rot_in_world * foot_pos_in_body.col(i);
+    foot_vel_in_body.col(i) = J_leg * curr_control_step_state.joint_vel.col(i);
+    foot_vel_in_body_rotated.col(i) = curr_control_step_state.body_rot_in_world * foot_vel_in_body.col(i) + curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_body_rotated.col(i));
+  }
+  Eigen::Vector3d contact_centroid_pos_in_body_rotated = calculateAverageContactValue(foot_pos_in_body_rotated, curr_control_step_state.contact_states);
+  Eigen::Vector3d contact_centroid_vel_in_body_rotated = calculateAverageContactValue(foot_vel_in_body_rotated, curr_control_step_state.contact_states);
+  curr_control_step_state.body_pos_in_world = curr_control_step_state.contact_centroid_pos_in_world - contact_centroid_pos_in_body_rotated;
+  curr_control_step_state.body_vel_in_world = -contact_centroid_vel_in_body_rotated;
+  for (int i = 0; i < 4; i++) {
+    curr_control_step_state.foot_pos_in_world.col(i) = curr_control_step_state.body_pos_in_world + foot_pos_in_body_rotated.col(i);
+    curr_control_step_state.foot_vel_in_world.col(i) = curr_control_step_state.body_vel_in_world + foot_vel_in_body_rotated.col(i);
+  }
+
+  bool is_curr_state_capturable_by_stand_controller = (curr_control_step_state.body_vel_in_world.norm() < params_.stand_controller_max_body_vel) && (curr_control_step_state.body_angvel_in_world.norm() < params_.stand_controller_max_body_angvel);
 
   // Locomotion state machine
   if (prev_control_step_state_.state == locomotion_state::INIT) {
     // Set the initial desired body orientation to be the current body orientation
-    control_step_inputs.body_rot_in_world_desired = curr_control_step_state.body_rot_in_world;
+    control_step_inputs_.body_rot_in_world_desired = curr_control_step_state.body_rot_in_world;
     curr_control_step_state.state = locomotion_state::STAND;
     return controller_interface::return_type::OK;
   } else if (prev_control_step_state_.state == locomotion_state::STAND) {
@@ -228,6 +240,10 @@ controller_interface::return_type HeuristicController::update(
       control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
       control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
     }
+
+    if (!is_curr_state_capturable_by_stand_controller) {
+      curr_control_step_state.state = locomotion_state::WALK;
+    }
   } else if (prev_control_step_state_.state == locomotion_state::WALK) {
     // Update the gait phases
     curr_control_step_state.gait_phases = prev_control_step_state_.gait_phases + Eigen::Vector4d::Ones() * params_.gait_frequency * period.seconds();
@@ -235,6 +251,10 @@ controller_interface::return_type HeuristicController::update(
     // Nullify the x and y effects of the body position controller
     control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
     control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
+
+    if (is_curr_state_capturable_by_stand_controller) {
+      curr_control_step_state.state = locomotion_state::STAND;
+    }
   } else if (prev_control_step_state_.state == locomotion_state::STOP) {
     for (auto &command_interface : command_interfaces_) {
       command_interface.set_value(0.0);
@@ -243,62 +263,94 @@ controller_interface::return_type HeuristicController::update(
   }
 
   // Get balancing forces from the balancing QP
-  TODO
+  Eigen::Matrix<double, 3, 4> balancing_forces_in_world = balancingQP(curr_control_step_state.foot_pos_in_world, curr_control_step_state.contact_states, curr_control_step_state.body_pos_in_world, balancing_force_desired, balancing_torque_desired, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
 
-  // Obtain the desired joint positions, velocities, kps, kds, and torques for each leg depending on whether it's in swing or stance
+  // Obtain the desired actuator commands for each leg depending on whether it's in swing or stance
   if (curr_control_step_state.state == locomotion_state::STAND || curr_control_step_state.state == locomotion_state::WALK) {
+    // Calculate the jacobian for the leg
+    Eigen::Matrix3d J_leg = leg_jacobian(curr_control_step_state.joint_pos[3 * i], curr_control_step_state.joint_pos[3 * i + 1], curr_control_step_state.joint_pos[3 * i + 2], curr_control_step_state.foot_pos_in_world.col(i));
+
+    Eigen::Matrix<double, 3, 4> foot_pos_in_body_desired;
+    Eigen::Matrix<double, 3, 4> foot_vel_in_body_desired;
+
     for (int i = 0; i < 4; i++) {
-      bool is_new_phase = (curr_control_step_state.gait_phases(i) > 0.0) && (fmod(curr_control_step_state.gait_phases(i), 1.0) > params_.phase_offsets[i]);
-
-      if (prev_control_step_state_.contact_states(i) == 0) {
+      if (curr_control_step_state.contact_states(i) == 0) {
         // Leg is in swing phase
-        // Persist the parameters of the swing trajectory from the previous control step
-        curr_control_step_state.swing_t0s(i) = prev_control_step_state_.swing_t0s(i);
-        curr_control_step_state.swing_tfs(i) = prev_control_step_state_.swing_tfs(i);
-        curr_control_step_state.swing_x0s.col(i) = prev_control_step_state_.swing_x0s.col(i);
-        curr_control_step_state.swing_v0s.col(i) = prev_control_step_state_.swing_v0s.col(i);
-
-        if (curr_control_step_state.global_time > curr_control_step_state.swing_tfs(i)) {
-          // Switch to stance phase
-          curr_control_step_state.contact_states(i) = 1;
-        }
-
-      } else {
-        // Leg is in stance phase
-        if (is_new_phase) {
-          // Switch to swing phase
+        if (prev_control_step_state_.contact_states(i) == 1) {
+          // Switching to swing phase
           // Begin the swing trajectory from the current foot position
           curr_control_step_state.contact_states(i) = 0;
           curr_control_step_state.swing_t0s(i) = curr_control_step_state.global_time;
-          curr_control_step_state.swing_tfs(i) = curr_control_step_state.global_time + params_.swing_durations(i);
+          curr_control_step_state.swing_tfs(i) = curr_control_step_state.global_time + params_.swing_durations[i];
           curr_control_step_state.swing_x0s.col(i) = curr_control_step_state.foot_pos_in_world.col(i);
           curr_control_step_state.swing_v0s.col(i) = curr_control_step_state.foot_vel_in_world.col(i);
+        } else {
+          // Continuing in swing phase
+          // Persist the parameters of the swing trajectory from the previous control step
+          curr_control_step_state.swing_t0s(i) = prev_control_step_state_.swing_t0s(i);
+          curr_control_step_state.swing_tfs(i) = prev_control_step_state_.swing_tfs(i);
+          curr_control_step_state.swing_x0s.col(i) = prev_control_step_state_.swing_x0s.col(i);
+          curr_control_step_state.swing_v0s.col(i) = prev_control_step_state_.swing_v0s.col(i);
         }
+
+        // Evaluate the swing trajectory
+        auto [foot_pos_in_world_desired, foot_vel_in_world_desired] = evaluateSwingTrajectory(curr_control_step_state.global_time, curr_control_step_state.swing_t0s(i), curr_control_step_state.swing_tfs(i), params_.swing_height, curr_control_step_state.swing_x0s.col(i), curr_control_step_state.swing_v0s.col(i), curr_control_step_state.swing_xfs.col(i), curr_control_step_state.swing_vfs.col(i));
+
+        // Calculate the desired foot position in body frame
+        foot_pos_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_pos_in_world_desired - curr_control_step_state.body_pos_in_world);
+
+        // Calculate the desired foot velocity in body frame
+        foot_vel_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_vel_in_world_desired - curr_control_step_state.body_vel_in_world - curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_world_desired - curr_control_step_state.body_pos_in_world));
+
+        // Calculate the desired joint velocities
+        curr_control_step_state.joint_vel_desired.col(i) = J_leg.inverse() * foot_vel_in_body_desired.col(i);
+
+        // Set joint kps and kds to swing values
+        // Set joint feedforward torques to zero
+        curr_control_step_state.joint_kp_desired.col(i) = Eigen::Vector3d::Ones() * params_.swing_joint_kp;
+        curr_control_step_state.joint_kd_desired.col(i) = Eigen::Vector3d::Ones() * params_.swing_joint_kd;
+        curr_control_step_state.joint_torque_desired.col(i) = Eigen::Vector3d::Zero();
+      } else {
+        // Leg is in stance phase
+        // Determine joint feedforward torques from the balancing forces
+        curr_control_step_state.joint_torque_desired.col(i) = J_leg.transpose() * curr_control_step_state.body_rot_in_world.inverse() * balancing_forces_in_world.col(i);
+
+        // Set joint kps and kds to zero
+        curr_control_step_state.joint_kp_desired.col(i) = Eigen::Vector3d::Zero();
+        curr_control_step_state.joint_kd_desired.col(i) = Eigen::Vector3d::Zero();
       }
     }
+
+    // Apply IK to obtain the desired joint positions
+    curr_control_step_state.joint_pos_desired = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
   }
 
-  for (int i = 0; i < 12; i++) {
-    command_interfaces_map_.at(params_.joint_names[i])
+
+  // Send the actuator commands
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 3; j++) {
+      int joint_index = 3 * i + j;
+      command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("position")
         .get()
-        .set_value(curr_control_step_state.joint_pos_desired[i]);
-    command_interfaces_map_.at(params_.joint_names[i])
+        .set_value(curr_control_step_state.joint_pos_desired(i, j));
+      command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("velocity")
         .get()
-        .set_value(curr_control_step_state.joint_vel_desired[i]);
-    command_interfaces_map_.at(params_.joint_names[i])
+        .set_value(curr_control_step_state.joint_vel_desired(i, j));
+      command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("effort")
         .get()
-        .set_value(curr_control_step_state.joint_torque_desired[i]);
-    command_interfaces_map_.at(params_.joint_names[i])
+        .set_value(curr_control_step_state.joint_torque_desired(i, j));
+      command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("kp")
         .get()
-        .set_value(curr_control_step_state.joint_kp_desired[i]);
-    command_interfaces_map_.at(params_.joint_names[i])
+        .set_value(curr_control_step_state.joint_kp_desired(i, j));
+      command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("kd")
         .get()
-        .set_value(curr_control_step_state.joint_kd_desired[i]);
+        .set_value(curr_control_step_state.joint_kd_desired(i, j));
+    }
   }
 
   // Update the previous control step state

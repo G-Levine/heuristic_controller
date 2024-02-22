@@ -97,7 +97,7 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosition(
     double foot_x_offset, double foot_y_offset, const Eigen::Vector3d& foot_p0,
     const Eigen::Vector3d& foot_v0) {
   // Calculate the body state at the end of the swing phase
-  auto [xf, yf, yawf, vxf, vyf] =
+  auto [xf, yf, yawf] =
       getFutureBodyState(tf - t, x, y, yaw, vx, vy, yaw_vel);
   // Calculate the linear offset of the next foothold disregarding yaw
   double x_offset =
@@ -119,27 +119,4 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosition(
   auto [foot_pt, foot_vt] = evaluateSwingTrajectory(
       t, t0, tf, swing_height, foot_p0, foot_v0, foot_pf, foot_vf);
   return std::make_tuple(foot_pt, foot_vt);
-}
-
-// Returns pos, vel, torque, kp, kd, contact_states
-std::tuple<Eigen::Matrix<double, 3, 4>, Eigen::Matrix<double, 3, 4>,
-           Eigen::Matrix<double, 3, 4>, Eigen::Matrix<double, 3, 4>,
-           Eigen::Matrix<double, 3, 4>, Eigen::Vector4i>
-legControl(const Eigen::Vector3d& swing_t0s, const Eigen::Vector3d& swing_t_lengths, ) {
-  auto grf = calculateGroundReactionForces();
-
-  for (int i = 0; i < 4; i++) {
-    bool in_swing = true;
-    if (in_swing) {
-      auto [foot_pt, foot_vt] = calculateSwingFootPosition();
-      // use IK to get joint positions
-      // use Jacobian to get velocities
-      // set pos, vel to calculated values
-      // set kp, kd to config values
-    } else {
-      // use Jacobian transpose to get torques
-      // set torques to calculated values
-      // set kp, kd to zero
-    }
-  }
 }

@@ -43,12 +43,16 @@ struct control_step_state {
     Eigen::Matrix<double, 3, 4> foot_pos_in_world;
     Eigen::Matrix<double, 3, 4> foot_vel_in_world;
 
+    // Joint states
+    Eigen::Matrix<double, 3, 4> joint_pos;
+    Eigen::Matrix<double, 3, 4> joint_vel;
+
     // Joint control outputs
-    std::array<double, 12> joint_pos_desired;
-    std::array<double, 12> joint_vel_desired;
-    std::array<double, 12> joint_torque_desired;
-    std::array<double, 12> joint_kp_desired;
-    std::array<double, 12> joint_kd_desired;
+    Eigen::Matrix<double, 3, 4> joint_pos_desired;
+    Eigen::Matrix<double, 3, 4> joint_vel_desired;
+    Eigen::Matrix<double, 3, 4> joint_torque_desired;
+    Eigen::Matrix<double, 3, 4> joint_kp_desired;
+    Eigen::Matrix<double, 3, 4> joint_kd_desired;
 };
 
 struct control_step_inputs {

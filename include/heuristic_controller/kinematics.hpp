@@ -91,18 +91,18 @@ Eigen::Matrix3d leg_jacobian(double qA, double qB, double qC, const LegConfig& c
 
 Eigen::Vector3d leg_ik(const Eigen::Vector3d& target_pos, const LegConfig& config, const Eigen::Vector3d& initial_guess = Eigen::Vector3d::Zero(), double alpha = 1.0) {
     Eigen::Vector3d guess = initial_guess;
+    double tolerance = 1e-6;
     for (int i = 0; i < 20; ++i) {
         Eigen::Matrix3d jacobian = leg_jacobian(guess(0), guess(1), guess(2), config);
         Eigen::Vector3d current_pos = leg_fk(guess(0), guess(1), guess(2), config);
         Eigen::Vector3d error = current_pos - target_pos;
 
-        // Compute the SVD
-        Eigen::JacobiSVD<Eigen::Matrix3d> svd(jacobian, Eigen::ComputeFullU | Eigen::ComputeFullV);
-        double tolerance = 1e-6 * std::max(jacobian.cols(), jacobian.rows()) * svd.singularValues().array().abs()(0);
-
         // Compute the pseudoinverse
-        Eigen::Matrix3d pseudo_inverse = svd.matrixV() * Eigen::Matrix3d((svd.singularValues().array().abs() > tolerance).select(svd.singularValues().array().inverse(), 0)).asDiagonal() * svd.matrixU().adjoint();
-        
+        Eigen::JacobiSVD<Eigen::Matrix3d> svd(jacobian);
+        Eigen::Matrix3d diagonal = Eigen::Matrix3d::Zero();
+        diagonal.diagonal() = (svd.singularValues().array().abs() > tolerance).select(svd.singularValues().array().inverse(), 0);
+        Eigen::Matrix3d pseudo_inverse = svd.matrixV() * diagonal * svd.matrixU().adjoint();
+
         Eigen::Vector3d step = -alpha * pseudo_inverse * error;
 
         // Prevent big solver steps
@@ -125,7 +125,30 @@ Eigen::Vector3d leg_ik(const Eigen::Vector3d& target_pos, const LegConfig& confi
     return guess;
 }
 
-Eigen::Matrix<double, 3, 4> four_legs_inverse_kinematics(const Eigen::Matrix<double, 3, 4>& r_body_foot, const RobotConfig& config, const Eigen::Matrix<double, 3, 4>& initial_guess = Eigen::Matrix<double, 3, 4>::Zero()) {
+Eigen::Matrix<double, 3, 4> four_legs_fk(const Eigen::Matrix<double, 3, 4>& alpha, const RobotConfig& config) {
+    Eigen::Matrix<double, 3, 4> r_body_foot = Eigen::Matrix<double, 3, 4>::Zero();
+
+    // Assuming MOTOR_DIRECTIONS is an Eigen::Matrix or can be converted to such.
+    Eigen::Matrix<double, 3, 4> directions = Eigen::Matrix<double, 3, 4>::Zero(); // Placeholder, replace with actual MOTOR_DIRECTIONS from config
+
+    for (int i = 0; i < 4; ++i) {
+        LegConfig leg_config(
+            config.LEG_ORIGINS(0, i),
+            config.LEG_ORIGINS(1, i),
+            config.ABDUCTION_OFFSETS[i],
+            config.LEG_L1_X,
+            config.LEG_L1_Z,
+            config.LEG_L2
+        );
+
+        Eigen::Vector3d leg_r = leg_fk(alpha(0, i), alpha(1, i), alpha(2, i), leg_config);
+        r_body_foot.col(i) = leg_r.cwiseProduct(directions.col(i)); // Apply motor directions to results
+    }
+
+    return r_body_foot;
+}
+
+Eigen::Matrix<double, 3, 4> four_legs_ik(const Eigen::Matrix<double, 3, 4>& r_body_foot, const RobotConfig& config, const Eigen::Matrix<double, 3, 4>& initial_guess = Eigen::Matrix<double, 3, 4>::Zero()) {
     Eigen::Matrix<double, 3, 4> alpha = Eigen::Matrix<double, 3, 4>::Zero();
 
     // Assuming MOTOR_DIRECTIONS is an Eigen::Matrix or can be converted to such.
@@ -155,7 +178,7 @@ Eigen::Matrix<double, 3, 4> four_legs_inverse_kinematics(const Eigen::Matrix<dou
     return alpha;
 }
 
-Eigen::Matrix<double, 3, 4> calculateGroundReactionForces(const Eigen::Matrix<double, 3, 4>& r,
+Eigen::Matrix<double, 3, 4> balancingQP(const Eigen::Matrix<double, 3, 4>& r,
                                                    const Eigen::Vector4i& s,
                                                    const Eigen::Vector3d& force_desired,
                                                    const Eigen::Vector3d& torque_desired,
@@ -215,14 +238,15 @@ Eigen::Matrix<double, 3, 4> calculateGroundReactionForces(const Eigen::Matrix<do
         result.col(i) = f.block<3, 1>(3 * i, 0);
     }
 
-    return result;
+    // Flip the signs to output the forces applied by the feet
+    return -result;
 }
 
-Eigen::Vector3d calculateAveragePositionInContact(const Eigen::Matrix<double, 3, 4>& positions, const Eigen::Vector4i& s) {
+Eigen::Vector3d calculateAverageContactValue(const Eigen::Matrix<double, 3, 4>& positions, const Eigen::Vector4i& contact_states) {
     Eigen::Vector3d averagePosition = Eigen::Vector3d::Zero();
     int contactCount = 0;
     for (int i = 0; i < 4; ++i) {
-        if (s[i]) {
+        if (contact_states[i]) {
             averagePosition += positions.col(i);
             contactCount++;
         }
@@ -233,42 +257,42 @@ Eigen::Vector3d calculateAveragePositionInContact(const Eigen::Matrix<double, 3,
     return averagePosition;
 }
 
-void estimateDisplacementAndVelocity(
-    const Eigen::Matrix<double, 3, 4>& footPositionsBodyFrame,
-    const Eigen::Matrix<double, 3, 4>& footVelocitiesBodyFrame,
-    const Eigen::Vector4i& s,
-    const Eigen::Quaterniond& orientation,
-    const Eigen::Vector3d& angularVelocity,
-    double alphaPos,
-    double alphaVel,
-    double deltaTime,
-    Eigen::Vector3d& prevPositionWorldFrame,
-    Eigen::Vector3d& prevVelocityWorldFrame) {
+// void estimateDisplacementAndVelocity(
+//     const Eigen::Matrix<double, 3, 4>& footPositionsBodyFrame,
+//     const Eigen::Matrix<double, 3, 4>& footVelocitiesBodyFrame,
+//     const Eigen::Vector4i& s,
+//     const Eigen::Quaterniond& orientation,
+//     const Eigen::Vector3d& angularVelocity,
+//     double alphaPos,
+//     double alphaVel,
+//     double deltaTime,
+//     Eigen::Vector3d& prevPositionWorldFrame,
+//     Eigen::Vector3d& prevVelocityWorldFrame) {
     
-    // Determine if any legs are in contact
-    bool anyContact = s.any();
+//     // Determine if any legs are in contact
+//     bool anyContact = s.any();
 
-    Eigen::Vector3d newPositionWorldFrame;
-    Eigen::Vector3d newVelocityWorldFrame;
+//     Eigen::Vector3d newPositionWorldFrame;
+//     Eigen::Vector3d newVelocityWorldFrame;
 
-    if (anyContact) {
-        // Calculate the average position and velocity in the body frame for legs in contact
-        Eigen::Vector3d averagePositionBodyFrame = -1 * calculateAveragePositionInContact(footPositionsBodyFrame, s);
-        Eigen::Vector3d averageVelocityBodyFrame = -1 * calculateAveragePositionInContact(footVelocitiesBodyFrame, s);
+//     if (anyContact) {
+//         // Calculate the average position and velocity in the body frame for legs in contact
+//         Eigen::Vector3d averagePositionBodyFrame = -1 * calculateAverageContactValue(footPositionsBodyFrame, s);
+//         Eigen::Vector3d averageVelocityBodyFrame = -1 * calculateAverageContactValue(footVelocitiesBodyFrame, s);
 
-        // Transform to the world frame
-        newPositionWorldFrame = orientation * averagePositionBodyFrame;
-        newVelocityWorldFrame = orientation * averageVelocityBodyFrame + angularVelocity.cross(newPositionWorldFrame);
-    } else {
-        // No contact, integrate position using the last known velocity
-        newPositionWorldFrame = prevPositionWorldFrame + prevVelocityWorldFrame * deltaTime;
-        newVelocityWorldFrame = prevVelocityWorldFrame; // Velocity remains unchanged without contact
-    }
+//         // Transform to the world frame
+//         newPositionWorldFrame = orientation * averagePositionBodyFrame;
+//         newVelocityWorldFrame = orientation * averageVelocityBodyFrame + angularVelocity.cross(newPositionWorldFrame);
+//     } else {
+//         // No contact, integrate position using the last known velocity
+//         newPositionWorldFrame = prevPositionWorldFrame + prevVelocityWorldFrame * deltaTime;
+//         newVelocityWorldFrame = prevVelocityWorldFrame; // Velocity remains unchanged without contact
+//     }
 
-    // Apply exponential moving average (EMA) for smoothing
-    prevPositionWorldFrame = alphaPos * newPositionWorldFrame + (1 - alphaPos) * prevPositionWorldFrame;
-    prevVelocityWorldFrame = alphaVel * newVelocityWorldFrame + (1 - alphaVel) * prevVelocityWorldFrame;
-}
+//     // Apply exponential moving average (EMA) for smoothing
+//     prevPositionWorldFrame = alphaPos * newPositionWorldFrame + (1 - alphaPos) * prevPositionWorldFrame;
+//     prevVelocityWorldFrame = alphaVel * newVelocityWorldFrame + (1 - alphaVel) * prevVelocityWorldFrame;
+// }
 
 Eigen::Quaterniond extractYawQuaternion(const Eigen::Quaterniond& originalQuat) {
     // Convert the quaternion to Euler angles (yaw, pitch, roll)

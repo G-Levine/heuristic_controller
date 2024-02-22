@@ -17,16 +17,16 @@ heuristic_controller:
     description: 'Names of all the leg joints'
   }
 
-  joint_kp: {
+  swing_joint_kp: {
     type: double,
     default_value: 5.0,
-    description: 'Position gains for the joints'
+    description: 'Position gains for the joints in swing phase'
   }
 
-  joint_kd: {
+  swing_joint_kd: {
     type: double,
     default_value: 0.2,
-    description: 'Velocity gains for the joints'
+    description: 'Velocity gains for the joints in swing phase'
   }
 
   init_duration: {
@@ -55,7 +55,7 @@ heuristic_controller:
 
   body_height: {
     type: double,
-    default_value: 0.1,
+    default_value: 0.125,
     description: 'Target height of the center of mass above the ground.'
   }
 
@@ -75,4 +75,58 @@ heuristic_controller:
     type: double_array,
     default_value: [0.4, 0.4, 0.4, 0.4],
     description: 'Duration of the swing phase'
+  }
+
+  stand_controller_max_body_vel: {
+    type: double,
+    default_value: 0.1,
+    description: 'Maximum velocity of the body in the stand controller'
+  }
+
+  stand_controller_max_body_angvel: {
+    type: double,
+    default_value: 0.1,
+    description: 'Maximum angular velocity of the body in the stand controller'
+  }
+
+  min_normal_force: {
+    type: double,
+    default_value: 0.1,
+    description: 'Minimum normal force to consider the foot in contact with the ground'
+  }
+
+  max_normal_force: {
+    type: double,
+    default_value: 10.0,
+    description: 'Maximum normal force permitted for the foot'
+  }
+
+  friction_coefficient: {
+    type: double,
+    default_value: 0.5,
+    description: 'Friction coefficient for the foot'
+  }
+
+  balancing_force_kp: {
+    type: double,
+    default_value: 0.5,
+    description: 'Proportional gain for the balancing force'
+  }
+
+  balancing_force_kd: {
+    type: double,
+    default_value: 0.1,
+    description: 'Derivative gain for the balancing force'
+  }
+
+  balancing_torque_kp: {
+    type: double,
+    default_value: 0.5,
+    description: 'Proportional gain for the balancing torque'
+  }
+
+  balancing_torque_kd: {
+    type: double,
+    default_value: 0.1,
+    description: 'Derivative gain for the balancing torque'
   }
