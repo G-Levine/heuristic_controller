@@ -1,0 +1,18 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 500  # Hz
+
+    heuristic_controller:
+      type: heuristic_controller/HeuristicController
+
+heuristic_controller:
+  ros__parameters:
+    gait_frequency: 1.0
+
+    swing_joint_kp: 5.0
+    swing_joint_kd: 0.2
+
+    balancing_force_kp: 0.5
+    balancing_force_kd: 0.1
+    balancing_torque_kp: 0.5
+    balancing_torque_kd: 0.1

@@ -49,10 +49,10 @@ install(
   DIRECTORY include/
   DESTINATION include
 )
-# install(
-#   DIRECTORY test/
-#   DESTINATION test
-# )
+install(
+  DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
