@@ -146,6 +146,20 @@ controller_interface::return_type HeuristicController::update(
                         .at("orientation.z")
                         .get()
                         .get_value();
+    // read joint states from hardware interface
+    for (int i = 0; i < 4; i++) {
+      for (int j = 0; j < 3; j++) {
+        int joint_index = 3 * i + j;
+        curr_control_step_state.joint_pos(j, i) = state_interfaces_map_.at(params_.joint_names[joint_index])
+            .at("position")
+            .get()
+            .get_value();
+        curr_control_step_state.joint_vel(j, i) = state_interfaces_map_.at(params_.joint_names[joint_index])
+            .at("velocity")
+            .get()
+            .get_value();
+      }
+    }
   }
   catch (const std::exception &e) {
     fprintf(stderr, "Exception thrown during update stage with message: %s \n",
@@ -203,10 +217,10 @@ controller_interface::return_type HeuristicController::update(
   Eigen::Matrix<double, 3, 4> foot_pos_in_body_rotated;
   Eigen::Matrix<double, 3, 4> foot_vel_in_body;
   Eigen::Matrix<double, 3, 4> foot_vel_in_body_rotated;
+  std::array<Eigen::Matrix3d, 4> jacobians = four_legs_jacobian(curr_control_step_state.joint_pos);
   for (int i = 0; i < 4; i++) {
-    Eigen::Matrix3d J_leg = leg_jacobian(curr_control_step_state.joint_pos(i, 0), curr_control_step_state.joint_pos(i, 1), curr_control_step_state.joint_pos(i, 2));
     foot_pos_in_body_rotated.col(i) = curr_control_step_state.body_rot_in_world * foot_pos_in_body.col(i);
-    foot_vel_in_body.col(i) = J_leg * curr_control_step_state.joint_vel.col(i);
+    foot_vel_in_body.col(i) = jacobians[i] * curr_control_step_state.joint_vel.col(i);
     foot_vel_in_body_rotated.col(i) = curr_control_step_state.body_rot_in_world * foot_vel_in_body.col(i) + curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_body_rotated.col(i));
   }
   Eigen::Vector3d contact_centroid_pos_in_body_rotated = calculateAverageContactValue(foot_pos_in_body_rotated, curr_control_step_state.contact_states);
@@ -263,12 +277,13 @@ controller_interface::return_type HeuristicController::update(
   }
 
   // Get balancing forces from the balancing QP
-  Eigen::Matrix<double, 3, 4> balancing_forces_in_world = balancingQP(curr_control_step_state.foot_pos_in_world, curr_control_step_state.contact_states, curr_control_step_state.body_pos_in_world, balancing_force_desired, balancing_torque_desired, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
+  Eigen::Vector3d balancing_force_desired = (control_step_inputs_.body_pos_in_world_desired - curr_control_step_state.body_pos_in_world) * params_.balancing_force_kp + (control_step_inputs_.body_vel_in_world_desired - curr_control_step_state.body_vel_in_world) * params_.balancing_force_kd;
+  Eigen::Vector3d balancing_torque_desired = (control_step_inputs_.body_rot_in_world_desired * curr_control_step_state.body_rot_in_world.inverse()).vec() * params_.balancing_torque_kp + (control_step_inputs_.body_angvel_in_world_desired - curr_control_step_state.body_angvel_in_world) * params_.balancing_torque_kd;
+  Eigen::Matrix<double, 3, 4> balancing_forces_in_world = balancingQP(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
 
   // Obtain the desired actuator commands for each leg depending on whether it's in swing or stance
   if (curr_control_step_state.state == locomotion_state::STAND || curr_control_step_state.state == locomotion_state::WALK) {
     // Calculate the jacobian for the leg
-    Eigen::Matrix3d J_leg = leg_jacobian(curr_control_step_state.joint_pos[3 * i], curr_control_step_state.joint_pos[3 * i + 1], curr_control_step_state.joint_pos[3 * i + 2], curr_control_step_state.foot_pos_in_world.col(i));
 
     Eigen::Matrix<double, 3, 4> foot_pos_in_body_desired;
     Eigen::Matrix<double, 3, 4> foot_vel_in_body_desired;
@@ -303,7 +318,7 @@ controller_interface::return_type HeuristicController::update(
         foot_vel_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_vel_in_world_desired - curr_control_step_state.body_vel_in_world - curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_world_desired - curr_control_step_state.body_pos_in_world));
 
         // Calculate the desired joint velocities
-        curr_control_step_state.joint_vel_desired.col(i) = J_leg.inverse() * foot_vel_in_body_desired.col(i);
+        curr_control_step_state.joint_vel_desired.col(i) = jacobians[i].inverse() * foot_vel_in_body_desired.col(i);
 
         // Set joint kps and kds to swing values
         // Set joint feedforward torques to zero
@@ -313,7 +328,7 @@ controller_interface::return_type HeuristicController::update(
       } else {
         // Leg is in stance phase
         // Determine joint feedforward torques from the balancing forces
-        curr_control_step_state.joint_torque_desired.col(i) = J_leg.transpose() * curr_control_step_state.body_rot_in_world.inverse() * balancing_forces_in_world.col(i);
+        curr_control_step_state.joint_torque_desired.col(i) = jacobians[i].transpose() * curr_control_step_state.body_rot_in_world.inverse() * balancing_forces_in_world.col(i);
 
         // Set joint kps and kds to zero
         curr_control_step_state.joint_kp_desired.col(i) = Eigen::Vector3d::Zero();
@@ -333,23 +348,23 @@ controller_interface::return_type HeuristicController::update(
       command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("position")
         .get()
-        .set_value(curr_control_step_state.joint_pos_desired(i, j));
+        .set_value(curr_control_step_state.joint_pos_desired(j, i));
       command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("velocity")
         .get()
-        .set_value(curr_control_step_state.joint_vel_desired(i, j));
+        .set_value(curr_control_step_state.joint_vel_desired(j, i));
       command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("effort")
         .get()
-        .set_value(curr_control_step_state.joint_torque_desired(i, j));
+        .set_value(curr_control_step_state.joint_torque_desired(j, i));
       command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("kp")
         .get()
-        .set_value(curr_control_step_state.joint_kp_desired(i, j));
+        .set_value(curr_control_step_state.joint_kp_desired(j, i));
       command_interfaces_map_.at(params_.joint_names[joint_index])
         .at("kd")
         .get()
-        .set_value(curr_control_step_state.joint_kd_desired(i, j));
+        .set_value(curr_control_step_state.joint_kd_desired(j, i));
     }
   }
 

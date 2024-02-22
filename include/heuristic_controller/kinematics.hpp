@@ -43,6 +43,10 @@ public:
         : motor_x(mx), motor_y(my), abduction_offset(ao), link_2_x(l2x), link_2_z(l2z), link_3(l3) {}
 };
 
+RobotConfig defaultRobotConfig() {
+    return RobotConfig();
+}
+
 Eigen::Vector3d leg_fk(double qA, double qB, double qC, const LegConfig& config) {
     double MX = config.motor_x;
     double MY = config.motor_y;
@@ -125,11 +129,9 @@ Eigen::Vector3d leg_ik(const Eigen::Vector3d& target_pos, const LegConfig& confi
     return guess;
 }
 
-Eigen::Matrix<double, 3, 4> four_legs_fk(const Eigen::Matrix<double, 3, 4>& alpha, const RobotConfig& config) {
+Eigen::Matrix<double, 3, 4> four_legs_fk(const Eigen::Matrix<double, 3, 4>& alpha) {
     Eigen::Matrix<double, 3, 4> r_body_foot = Eigen::Matrix<double, 3, 4>::Zero();
-
-    // Assuming MOTOR_DIRECTIONS is an Eigen::Matrix or can be converted to such.
-    Eigen::Matrix<double, 3, 4> directions = Eigen::Matrix<double, 3, 4>::Zero(); // Placeholder, replace with actual MOTOR_DIRECTIONS from config
+    RobotConfig config = defaultRobotConfig();
 
     for (int i = 0; i < 4; ++i) {
         LegConfig leg_config(
@@ -142,17 +144,15 @@ Eigen::Matrix<double, 3, 4> four_legs_fk(const Eigen::Matrix<double, 3, 4>& alph
         );
 
         Eigen::Vector3d leg_r = leg_fk(alpha(0, i), alpha(1, i), alpha(2, i), leg_config);
-        r_body_foot.col(i) = leg_r.cwiseProduct(directions.col(i)); // Apply motor directions to results
+        r_body_foot.col(i) = leg_r.cwiseProduct(config.MOTOR_DIRECTIONS.col(i)); // Apply motor directions to results
     }
 
     return r_body_foot;
 }
 
-Eigen::Matrix<double, 3, 4> four_legs_ik(const Eigen::Matrix<double, 3, 4>& r_body_foot, const RobotConfig& config, const Eigen::Matrix<double, 3, 4>& initial_guess = Eigen::Matrix<double, 3, 4>::Zero()) {
+Eigen::Matrix<double, 3, 4> four_legs_ik(const Eigen::Matrix<double, 3, 4>& r_body_foot, const Eigen::Matrix<double, 3, 4>& initial_guess = Eigen::Matrix<double, 3, 4>::Zero()) {
     Eigen::Matrix<double, 3, 4> alpha = Eigen::Matrix<double, 3, 4>::Zero();
-
-    // Assuming MOTOR_DIRECTIONS is an Eigen::Matrix or can be converted to such.
-    Eigen::Matrix<double, 3, 4> directions = Eigen::Matrix<double, 3, 4>::Zero(); // Placeholder, replace with actual MOTOR_DIRECTIONS from config
+    RobotConfig config = defaultRobotConfig();
 
     for (int i = 0; i < 4; ++i) {
         LegConfig leg_config(
@@ -165,17 +165,40 @@ Eigen::Matrix<double, 3, 4> four_legs_ik(const Eigen::Matrix<double, 3, 4>& r_bo
         );
 
         Eigen::Vector3d target_pos = r_body_foot.col(i);
-        Eigen::Vector3d guess = initial_guess.col(i).cwiseProduct(directions.col(i)); // Apply motor directions to initial guess
+        Eigen::Vector3d guess = initial_guess.col(i).cwiseProduct(config.MOTOR_DIRECTIONS.col(i)); // Apply motor directions to initial guess
 
         Eigen::Vector3d leg_alpha = leg_ik(target_pos, leg_config, guess);
 
         // Adjust for the mechanical offset, if necessary
         leg_alpha(2) += M_PI / 4; // Adding 45 degrees in radians to the third joint
 
-        alpha.col(i) = leg_alpha.cwiseProduct(directions.col(i)); // Apply motor directions to results
+        alpha.col(i) = leg_alpha.cwiseProduct(config.MOTOR_DIRECTIONS.col(i)); // Apply motor directions to results
     }
 
     return alpha;
+}
+
+std::array<Eigen::Matrix3d, 4> four_legs_jacobian(const Eigen::Matrix<double, 3, 4>& alpha) {
+    std::array<Eigen::Matrix3d, 4> jacobians;
+    RobotConfig config = defaultRobotConfig();
+
+    for (int i = 0; i < 4; ++i) {
+        LegConfig leg_config(
+            config.LEG_ORIGINS(0, i),
+            config.LEG_ORIGINS(1, i),
+            config.ABDUCTION_OFFSETS[i],
+            config.LEG_L1_X,
+            config.LEG_L1_Z,
+            config.LEG_L2
+        );
+
+        Eigen::Matrix3d J_leg = leg_jacobian(alpha(0, i), alpha(1, i), alpha(2, i), leg_config);
+        for (int j = 0; j < 3; ++j) {
+            jacobians[i].col(j) = J_leg.col(j) * config.MOTOR_DIRECTIONS(j, i); // Apply motor directions to results
+        }
+    }
+
+    return jacobians;
 }
 
 Eigen::Matrix<double, 3, 4> balancingQP(const Eigen::Matrix<double, 3, 4>& r,
@@ -256,43 +279,6 @@ Eigen::Vector3d calculateAverageContactValue(const Eigen::Matrix<double, 3, 4>& 
     }
     return averagePosition;
 }
-
-// void estimateDisplacementAndVelocity(
-//     const Eigen::Matrix<double, 3, 4>& footPositionsBodyFrame,
-//     const Eigen::Matrix<double, 3, 4>& footVelocitiesBodyFrame,
-//     const Eigen::Vector4i& s,
-//     const Eigen::Quaterniond& orientation,
-//     const Eigen::Vector3d& angularVelocity,
-//     double alphaPos,
-//     double alphaVel,
-//     double deltaTime,
-//     Eigen::Vector3d& prevPositionWorldFrame,
-//     Eigen::Vector3d& prevVelocityWorldFrame) {
-    
-//     // Determine if any legs are in contact
-//     bool anyContact = s.any();
-
-//     Eigen::Vector3d newPositionWorldFrame;
-//     Eigen::Vector3d newVelocityWorldFrame;
-
-//     if (anyContact) {
-//         // Calculate the average position and velocity in the body frame for legs in contact
-//         Eigen::Vector3d averagePositionBodyFrame = -1 * calculateAverageContactValue(footPositionsBodyFrame, s);
-//         Eigen::Vector3d averageVelocityBodyFrame = -1 * calculateAverageContactValue(footVelocitiesBodyFrame, s);
-
-//         // Transform to the world frame
-//         newPositionWorldFrame = orientation * averagePositionBodyFrame;
-//         newVelocityWorldFrame = orientation * averageVelocityBodyFrame + angularVelocity.cross(newPositionWorldFrame);
-//     } else {
-//         // No contact, integrate position using the last known velocity
-//         newPositionWorldFrame = prevPositionWorldFrame + prevVelocityWorldFrame * deltaTime;
-//         newVelocityWorldFrame = prevVelocityWorldFrame; // Velocity remains unchanged without contact
-//     }
-
-//     // Apply exponential moving average (EMA) for smoothing
-//     prevPositionWorldFrame = alphaPos * newPositionWorldFrame + (1 - alphaPos) * prevPositionWorldFrame;
-//     prevVelocityWorldFrame = alphaVel * newVelocityWorldFrame + (1 - alphaVel) * prevVelocityWorldFrame;
-// }
 
 Eigen::Quaterniond extractYawQuaternion(const Eigen::Quaterniond& originalQuat) {
     // Convert the quaternion to Euler angles (yaw, pitch, roll)
