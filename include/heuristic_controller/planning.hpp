@@ -125,7 +125,7 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosition(
 std::tuple<Eigen::Matrix<double, 3, 4>, Eigen::Matrix<double, 3, 4>,
            Eigen::Matrix<double, 3, 4>, Eigen::Matrix<double, 3, 4>,
            Eigen::Matrix<double, 3, 4>, Eigen::Vector4i>
-legControl(Eigen::Vector3d swing_t0s, Eigen::Vector3d swing_t_lengths, ) {
+legControl(const Eigen::Vector3d& swing_t0s, const Eigen::Vector3d& swing_t_lengths, ) {
   auto grf = calculateGroundReactionForces();
 
   for (int i = 0; i < 4; i++) {

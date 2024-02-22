@@ -68,12 +68,12 @@ controller_interface::CallbackReturn HeuristicController::on_activate(
   }
 
   // Store the initial joint positions
-  for (int i = 0; i < ACTION_SIZE; i++) {
-    init_joint_pos_[i] = state_interfaces_map_.at(params_.joint_names[i])
-                             .at("position")
-                             .get()
-                             .get_value();
-  }
+  // for (int i = 0; i < ACTION_SIZE; i++) {
+  //   init_joint_pos_[i] = state_interfaces_map_.at(params_.joint_names[i])
+  //                            .at("position")
+  //                            .get()
+  //                            .get_value();
+  // }
 
   // Initialize the command subscriber
   cmd_subscriber_ = get_node()->create_subscription<CmdType>(
@@ -91,7 +91,7 @@ controller_interface::CallbackReturn HeuristicController::on_activate(
   prev_control_step_state_.contact_states.setOnes();
   // Reset the gait phases
   for (int i = 0; i < 4; i++) {
-    prev_control_step_state_.gait_phases(i) = -params_.phase_offsets(i);
+    prev_control_step_state_.gait_phases(i) = -params_.phase_offsets[i];
   }
 
   RCLCPP_INFO(get_node()->get_logger(), "activate successful");
@@ -147,6 +147,11 @@ controller_interface::return_type HeuristicController::update(
                         .get()
                         .get_value();
   }
+  catch (const std::exception &e) {
+    fprintf(stderr, "Exception thrown during update stage with message: %s \n",
+            e.what());
+    return controller_interface::return_type::ERROR;
+  }
 
   // Get the latest commanded velocities
   auto command = rt_command_ptr_.readFromRT();
@@ -169,7 +174,33 @@ controller_interface::return_type HeuristicController::update(
     control_step_inputs_.body_rot_in_world_desired = control_step_inputs_.body_rot_in_world_desired.normalized();
   }
 
-  // Do state estimation using the current IMU and joint states but the previous step's contact states
+  // Handle swing and stance phase transitions
+  if (curr_control_step_state.state == locomotion_state::STAND || curr_control_step_state.state == locomotion_state::WALK) {
+    for (int i = 0; i < 4; i++) {
+      if (prev_control_step_state_.contact_states(i) == 0) {
+        // Leg is in swing phase
+        if (curr_control_step_state.global_time > curr_control_step_state.swing_tfs(i)) {
+          // Switch to stance phase
+          curr_control_step_state.contact_states(i) = 1;
+        }
+      } else {
+        // Leg is in stance phase
+        bool is_new_phase = (curr_control_step_state.gait_phases(i) > 0.0) && (fmod(curr_control_step_state.gait_phases(i), 1.0) > params_.phase_offsets[i]);
+        if (is_new_phase) {
+          // Switch to swing phase
+          curr_control_step_state.contact_states(i) = 0;
+        }
+      }
+    }
+  }
+
+  // If the contact states changed, update the contact centroid position
+  if (curr_control_step_state.contact_states != prev_control_step_state_.contact_states) {
+    auto contact_centroid_pos_delta = contactCentroid(curr_control_step_state.foot_pos_in_world, curr_control_step_state.contact_states, prev_control_step_state_.contact_centroid_pos_in_world) - contactCentroid(curr_control_step_state.foot_pos_in_world, prev_control_step_state_.contact_states, prev_control_step_state_.contact_centroid_pos_in_world);
+    curr_control_step_state.contact_centroid_pos_in_world = prev_control_step_state_.contact_centroid_pos_in_world + contact_centroid_pos_delta
+  }
+
+  // Do state estimation
   auto[contact_centroid_pos_in_world, body_pos_in_world, body_vel_in_world, foot_pos_in_world, foot_vel_in_world] = stateEstimation(curr_control_step_state, prev_control_step_state_);
   curr_control_step_state.contact_centroid_pos_in_world = contact_centroid_pos_in_world;
   curr_control_step_state.body_pos_in_world = body_pos_in_world;
@@ -179,17 +210,31 @@ controller_interface::return_type HeuristicController::update(
 
   // Locomotion state machine
   if (prev_control_step_state_.state == locomotion_state::INIT) {
+    // Set the initial desired body orientation to be the current body orientation
     control_step_inputs.body_rot_in_world_desired = curr_control_step_state.body_rot_in_world;
     curr_control_step_state.state = locomotion_state::STAND;
     return controller_interface::return_type::OK;
   } else if (prev_control_step_state_.state == locomotion_state::STAND) {
     // Reset the gait phases
     for (int i = 0; i < 4; i++) {
-      curr_control_step_state.gait_phases(i) = -params_.phase_offsets(i);
+      curr_control_step_state.gait_phases(i) = -params_.phase_offsets[i];
+    }
+    if (prev_control_step_state_.contact_states.sum() == 4) {
+      // If all legs are in stance, set the desired body position to be centered above the contact centroid
+      control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.contact_centroid_pos_in_world(0);
+      control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.contact_centroid_pos_in_world(1);
+    } else {
+      // If any leg is in swing, nullify the x and y effects of the body position controller
+      control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
+      control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
     }
   } else if (prev_control_step_state_.state == locomotion_state::WALK) {
     // Update the gait phases
-    curr_control_step_state.gait_phases = prev_control_step_state_.gait_phases + params_.gait_frequency * period.seconds();
+    curr_control_step_state.gait_phases = prev_control_step_state_.gait_phases + Eigen::Vector4d::Ones() * params_.gait_frequency * period.seconds();
+
+    // Nullify the x and y effects of the body position controller
+    control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
+    control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
   } else if (prev_control_step_state_.state == locomotion_state::STOP) {
     for (auto &command_interface : command_interfaces_) {
       command_interface.set_value(0.0);
@@ -197,10 +242,13 @@ controller_interface::return_type HeuristicController::update(
     return controller_interface::return_type::OK;
   }
 
-  // Handle swing and stance phase transitions
+  // Get balancing forces from the balancing QP
+  TODO
+
+  // Obtain the desired joint positions, velocities, kps, kds, and torques for each leg depending on whether it's in swing or stance
   if (curr_control_step_state.state == locomotion_state::STAND || curr_control_step_state.state == locomotion_state::WALK) {
     for (int i = 0; i < 4; i++) {
-      bool is_new_phase = (curr_control_step_state.gait_phases(i) > 0.0) && (fmod(curr_control_step_state.gait_phases(i), 1.0) > params_.phase_offsets(i));
+      bool is_new_phase = (curr_control_step_state.gait_phases(i) > 0.0) && (fmod(curr_control_step_state.gait_phases(i), 1.0) > params_.phase_offsets[i]);
 
       if (prev_control_step_state_.contact_states(i) == 0) {
         // Leg is in swing phase
@@ -210,7 +258,7 @@ controller_interface::return_type HeuristicController::update(
         curr_control_step_state.swing_x0s.col(i) = prev_control_step_state_.swing_x0s.col(i);
         curr_control_step_state.swing_v0s.col(i) = prev_control_step_state_.swing_v0s.col(i);
 
-        if (curr_control_step_state.global_time > control_step_state.swing_tfs(i)) {
+        if (curr_control_step_state.global_time > curr_control_step_state.swing_tfs(i)) {
           // Switch to stance phase
           curr_control_step_state.contact_states(i) = 1;
         }
@@ -230,36 +278,27 @@ controller_interface::return_type HeuristicController::update(
     }
   }
 
-  // If the contact states changed, update the contact centroid position
-  if (curr_control_step_state.contact_states != prev_control_step_state_.contact_states) {
-    auto contact_centroid_pos_delta = contactCentroid(curr_control_step_state.foot_pos_in_world, curr_control_step_state.contact_states, prev_control_step_state_.contact_centroid_pos_in_world) - contactCentroid(curr_control_step_state.foot_pos_in_world, prev_control_step_state_.contact_states, prev_control_step_state_.contact_centroid_pos_in_world);
-    curr_control_step_state.contact_centroid_pos_in_world = prev_control_step_state_.contact_centroid_pos_in_world + contact_centroid_pos_delta
-  }
-
-  // Do control
-  TODO
-
   for (int i = 0; i < 12; i++) {
     command_interfaces_map_.at(params_.joint_names[i])
         .at("position")
         .get()
-        .set_value(joint_pos_desired[i]);
+        .set_value(curr_control_step_state.joint_pos_desired[i]);
     command_interfaces_map_.at(params_.joint_names[i])
         .at("velocity")
         .get()
-        .set_value(joint_vel_desired[i]);
+        .set_value(curr_control_step_state.joint_vel_desired[i]);
     command_interfaces_map_.at(params_.joint_names[i])
         .at("effort")
         .get()
-        .set_value(joint_torque_desired[i]);
+        .set_value(curr_control_step_state.joint_torque_desired[i]);
     command_interfaces_map_.at(params_.joint_names[i])
         .at("kp")
         .get()
-        .set_value(joint_kp_desired[i]);
+        .set_value(curr_control_step_state.joint_kp_desired[i]);
     command_interfaces_map_.at(params_.joint_names[i])
         .at("kd")
         .get()
-        .set_value(joint_kd_desired[i]);
+        .set_value(curr_control_step_state.joint_kd_desired[i]);
   }
 
   // Update the previous control step state
