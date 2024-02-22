@@ -90,7 +90,7 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> evaluateSwingTrajectory(
   return std::make_tuple(pt, vt);
 }
 
-std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosition(
+std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosVel(
     double t, double t0, double tf, double stance_time, double body_height,
     double swing_height, double x, double y, double yaw, double vx, double vy,
     double yaw_vel, double vx_des, double vy_des, double yaw_vel_des,

@@ -309,7 +309,9 @@ controller_interface::return_type HeuristicController::update(
         }
 
         // Evaluate the swing trajectory
-        auto [foot_pos_in_world_desired, foot_vel_in_world_desired] = evaluateSwingTrajectory(curr_control_step_state.global_time, curr_control_step_state.swing_t0s(i), curr_control_step_state.swing_tfs(i), params_.swing_height, curr_control_step_state.swing_x0s.col(i), curr_control_step_state.swing_v0s.col(i), curr_control_step_state.swing_xfs.col(i), curr_control_step_state.swing_vfs.col(i));
+        double stance_time = (1 - params_.swing_durations[i]) / params_.gait_frequency;
+        double body_yaw = extractYawFromQuaternion(curr_control_step_state.body_rot_in_world);
+        auto[foot_pos_in_world_desired, foot_vel_in_world_desired] = calculateSwingFootPosVel(curr_control_step_state.global_time, curr_control_step_state.swing_t0s(i), curr_control_step_state.swing_tfs(i), stance_time, params_.body_height, params_.swing_height, curr_control_step_state.body_pos_in_world(0), curr_control_step_state.body_pos_in_world(1), body_yaw, curr_control_step_state.body_vel_in_world(0), curr_control_step_state.body_vel_in_world(1), curr_control_step_state.body_angvel_in_world(2), control_step_inputs_.body_vel_in_world_desired(0), control_step_inputs_.body_vel_in_world_desired(1), control_step_inputs_.body_angvel_in_world_desired(2), params_.foot_x_origins[i], params_.foot_y_origins[i], curr_control_step_state.swing_x0s.col(i), curr_control_step_state.swing_v0s.col(i));
 
         // Calculate the desired foot position in body frame
         foot_pos_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_pos_in_world_desired - curr_control_step_state.body_pos_in_world);

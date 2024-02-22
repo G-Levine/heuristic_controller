@@ -280,12 +280,15 @@ Eigen::Vector3d calculateAverageContactValue(const Eigen::Matrix<double, 3, 4>& 
     return averagePosition;
 }
 
-Eigen::Quaterniond extractYawQuaternion(const Eigen::Quaterniond& originalQuat) {
+float extractYawFromQuaternion(const Eigen::Quaterniond& quat) {
     // Convert the quaternion to Euler angles (yaw, pitch, roll)
-    Eigen::Vector3d euler = originalQuat.toRotationMatrix().eulerAngles(2, 1, 0); // ZYX convention
+    Eigen::Vector3d euler = quat.toRotationMatrix().eulerAngles(2, 1, 0); // ZYX convention
+    return euler[0]; // First component is yaw in ZYX convention
+}
 
+Eigen::Quaterniond extractYawQuaternion(const Eigen::Quaterniond& originalQuat) {
     // Extract the yaw component
-    double yaw = euler[0]; // First component is yaw in ZYX convention
+    double yaw = extractYawFromQuaternion(originalQuat);
 
     // Create a new quaternion with only the yaw component
     Eigen::AngleAxisd yawRotation(yaw, Eigen::Vector3d::UnitZ()); // Rotation around Z-axis

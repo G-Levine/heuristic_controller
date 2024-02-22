@@ -130,3 +130,15 @@ heuristic_controller:
     default_value: 0.1,
     description: 'Derivative gain for the balancing torque'
   }
+
+  foot_x_origins: {
+    type: double_array,
+    default_value: [0.1, 0.1, -0.1, -0.1],
+    description: 'X origin of the feet in the body frame'
+  }
+
+  foot_y_origins: {
+    type: double_array,
+    default_value: [-0.1, 0.1, -0.1, 0.1],
+    description: 'Y origin of the feet in the body frame'
+  }
