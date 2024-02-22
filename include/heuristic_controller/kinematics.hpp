@@ -1,6 +1,6 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-#include <Eigen/SVD>
+#include <Eigen/QR>
 #include <cmath>
 #include <iostream>
 #include <algorithm>
@@ -95,17 +95,12 @@ Eigen::Matrix3d leg_jacobian(double qA, double qB, double qC, const LegConfig& c
 
 Eigen::Vector3d leg_ik(const Eigen::Vector3d& target_pos, const LegConfig& config, const Eigen::Vector3d& initial_guess = Eigen::Vector3d::Zero(), double alpha = 1.0) {
     Eigen::Vector3d guess = initial_guess;
-    double tolerance = 1e-6;
     for (int i = 0; i < 20; ++i) {
         Eigen::Matrix3d jacobian = leg_jacobian(guess(0), guess(1), guess(2), config);
         Eigen::Vector3d current_pos = leg_fk(guess(0), guess(1), guess(2), config);
         Eigen::Vector3d error = current_pos - target_pos;
 
-        // Compute the pseudoinverse
-        Eigen::JacobiSVD<Eigen::Matrix3d> svd(jacobian);
-        Eigen::Matrix3d diagonal = Eigen::Matrix3d::Zero();
-        diagonal.diagonal() = (svd.singularValues().array().abs() > tolerance).select(svd.singularValues().array().inverse(), 0);
-        Eigen::Matrix3d pseudo_inverse = svd.matrixV() * diagonal * svd.matrixU().adjoint();
+        Eigen::Matrix3d pseudo_inverse = jacobian.completeOrthogonalDecomposition().pseudoInverse();
 
         Eigen::Vector3d step = -alpha * pseudo_inverse * error;
 

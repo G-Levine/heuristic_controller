@@ -196,6 +196,7 @@ controller_interface::return_type HeuristicController::update(
         if (curr_control_step_state.global_time > curr_control_step_state.swing_tfs(i)) {
           // Switch to stance phase
           curr_control_step_state.contact_states(i) = 1;
+          RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from swing to stance", i);
         }
       } else {
         // Leg is in stance phase
@@ -203,6 +204,7 @@ controller_interface::return_type HeuristicController::update(
         if (is_new_phase) {
           // Switch to swing phase
           curr_control_step_state.contact_states(i) = 0;
+          RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from stance to swing", i);
         }
       }
     }
@@ -239,6 +241,9 @@ controller_interface::return_type HeuristicController::update(
     // Set the initial desired body orientation to be the current body orientation
     control_step_inputs_.body_rot_in_world_desired = curr_control_step_state.body_rot_in_world;
     curr_control_step_state.state = locomotion_state::STAND;
+    curr_control_step_state.contact_states.setOnes();
+    prev_control_step_state_ = curr_control_step_state;
+    RCLCPP_INFO(get_node()->get_logger(), "Switching from init to stand");
     return controller_interface::return_type::OK;
   } else if (prev_control_step_state_.state == locomotion_state::STAND) {
     // Reset the gait phases
@@ -255,9 +260,10 @@ controller_interface::return_type HeuristicController::update(
       control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
     }
 
-    if (!is_curr_state_capturable_by_stand_controller) {
-      curr_control_step_state.state = locomotion_state::WALK;
-    }
+    // if (!is_curr_state_capturable_by_stand_controller) {
+    //   curr_control_step_state.state = locomotion_state::WALK;
+    //   RCLCPP_INFO(get_node()->get_logger(), "Switching from stand to walk");
+    // }
   } else if (prev_control_step_state_.state == locomotion_state::WALK) {
     // Update the gait phases
     curr_control_step_state.gait_phases = prev_control_step_state_.gait_phases + Eigen::Vector4d::Ones() * params_.gait_frequency * period.seconds();
@@ -268,6 +274,7 @@ controller_interface::return_type HeuristicController::update(
 
     if (is_curr_state_capturable_by_stand_controller) {
       curr_control_step_state.state = locomotion_state::STAND;
+      RCLCPP_INFO(get_node()->get_logger(), "Switching from walk to stand");
     }
   } else if (prev_control_step_state_.state == locomotion_state::STOP) {
     for (auto &command_interface : command_interfaces_) {
@@ -280,6 +287,8 @@ controller_interface::return_type HeuristicController::update(
   Eigen::Vector3d balancing_force_desired = (control_step_inputs_.body_pos_in_world_desired - curr_control_step_state.body_pos_in_world) * params_.balancing_force_kp + (control_step_inputs_.body_vel_in_world_desired - curr_control_step_state.body_vel_in_world) * params_.balancing_force_kd;
   Eigen::Vector3d balancing_torque_desired = (control_step_inputs_.body_rot_in_world_desired * curr_control_step_state.body_rot_in_world.inverse()).vec() * params_.balancing_torque_kp + (control_step_inputs_.body_angvel_in_world_desired - curr_control_step_state.body_angvel_in_world) * params_.balancing_torque_kd;
   Eigen::Matrix<double, 3, 4> balancing_forces_in_world = balancingQP(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
+  std::cout << "Balancing forces: \n" << balancing_forces_in_world << std::endl;
+  balancing_forces_in_world.setZero();
 
   // Obtain the desired actuator commands for each leg depending on whether it's in swing or stance
   if (curr_control_step_state.state == locomotion_state::STAND || curr_control_step_state.state == locomotion_state::WALK) {
