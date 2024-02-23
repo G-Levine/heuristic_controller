@@ -290,9 +290,7 @@ controller_interface::return_type HeuristicController::update(
   Eigen::Vector3d body_angvel_error = control_step_inputs_.body_angvel_in_world_desired - curr_control_step_state.body_angvel_in_world;
   Eigen::Vector3d balancing_force_desired = body_pos_error * params_.balancing_force_kp + body_vel_error * params_.balancing_force_kd;
   Eigen::Vector3d balancing_torque_desired = body_rot_error * params_.balancing_torque_kp + body_angvel_error * params_.balancing_torque_kd;
-  balancing_force_desired.setZero();
-  balancing_force_desired(2) = -1.0;
-  balancing_torque_desired.setZero();
+
   Eigen::Matrix<double, 3, 4> balancing_forces_in_world = balancingQP(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
 
   std::cout << "Pos error: \n" << body_pos_error << std::endl;
@@ -300,6 +298,7 @@ controller_interface::return_type HeuristicController::update(
   std::cout << "Rot error: \n" << body_rot_error << std::endl;
   std::cout << "Angvel error: \n" << body_angvel_error << std::endl;
   std::cout << "Foot pos in body rotated: \n" << foot_pos_in_body_rotated << std::endl;
+  std::cout << "Joint angles: \n" << curr_control_step_state.joint_pos << std::endl;
   std::cout << "Balancing forces: \n" << balancing_forces_in_world << std::endl;
   balancing_forces_in_world.setZero();
 

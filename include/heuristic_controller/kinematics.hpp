@@ -138,8 +138,7 @@ Eigen::Matrix<double, 3, 4> four_legs_fk(const Eigen::Matrix<double, 3, 4>& alph
             config.LEG_L2
         );
 
-        Eigen::Vector3d leg_r = leg_fk(alpha(0, i), alpha(1, i), alpha(2, i), leg_config);
-        r_body_foot.col(i) = leg_r.cwiseProduct(config.MOTOR_DIRECTIONS.col(i)); // Apply motor directions to results
+        r_body_foot.col(i) = leg_fk(alpha(0, i) * config.MOTOR_DIRECTIONS(0, i), alpha(1, i) * config.MOTOR_DIRECTIONS(1, i), alpha(2, i) * config.MOTOR_DIRECTIONS(2, i), leg_config);
     }
 
     return r_body_foot;
@@ -187,7 +186,7 @@ std::array<Eigen::Matrix3d, 4> four_legs_jacobian(const Eigen::Matrix<double, 3,
             config.LEG_L2
         );
 
-        Eigen::Matrix3d J_leg = leg_jacobian(alpha(0, i), alpha(1, i), alpha(2, i), leg_config);
+        Eigen::Matrix3d J_leg = leg_jacobian(alpha(0, i) * config.MOTOR_DIRECTIONS(0, i), alpha(1, i) * config.MOTOR_DIRECTIONS(1, i), alpha(2, i) * config.MOTOR_DIRECTIONS(2, i), leg_config);
         for (int j = 0; j < 3; ++j) {
             jacobians[i].col(j) = J_leg.col(j) * config.MOTOR_DIRECTIONS(j, i); // Apply motor directions to results
         }
@@ -227,7 +226,11 @@ Eigen::Matrix<double, 3, 4> balancingQP(const Eigen::Matrix<double, 3, 4>& r,
     }
 
     // Solve the least squares problem using QR decomposition, suitable for fixed-size matrices
-    Eigen::Matrix<double, 12, 1> f = A.householderQr().solve(b);
+    // Eigen::Matrix<double, 12, 1> f = A.householderQr().solve(b);
+
+    // Solve the least squares problem using SVD decomposition, suitable for potentially ill-conditioned matrices
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    Eigen::Matrix<double, 12, 1> f = svd.solve(b);
 
     // Apply Z Constraints
     for (int i = 0; i < 4; ++i) {
