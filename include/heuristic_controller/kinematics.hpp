@@ -213,7 +213,7 @@ Eigen::Matrix<double, 3, 4> balancingQP(const Eigen::Matrix<double, 3, 4>& r,
 
     // Populate A based on contact status
     for (int i = 0; i < 4; ++i) {
-        if (s[i] == 1) {
+        if (s(i) == 1) {
             // Force part
             A.block<3, 3>(0, 3 * i) = Eigen::Matrix3d::Identity();
             

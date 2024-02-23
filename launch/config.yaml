@@ -9,10 +9,10 @@ heuristic_controller:
   ros__parameters:
     gait_frequency: 1.0
 
-    swing_joint_kp: 5.0
-    swing_joint_kd: 0.2
+    swing_joint_kp: 0.5
+    swing_joint_kd: 0.05
 
-    balancing_force_kp: 0.5
-    balancing_force_kd: 0.1
-    balancing_torque_kp: 0.5
-    balancing_torque_kd: 0.1
+    balancing_force_kp: 0.1
+    balancing_force_kd: 0.0
+    balancing_torque_kp: 0.0
+    balancing_torque_kd: 0.0
