@@ -114,9 +114,9 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosVel(
   double foot_x_next = xf + x_offset + x_offset_rot;
   double foot_y_next = yf + y_offset + y_offset_rot;
   // Evaluate the swing trajectory at the current time
-  Eigen::Vector3d foot_pf(foot_x_next, foot_y_next, 0.0);
+  Eigen::Vector3d foot_pf(foot_x_next, foot_y_next, foot_p0(2));
   Eigen::Vector3d foot_vf(0.0, 0.0, 0.0);
   auto [foot_pt, foot_vt] = evaluateSwingTrajectory(
-      t, t0, tf, swing_height, foot_p0, foot_v0, foot_pf, foot_vf);
+      t, t0, tf, swing_height + foot_p0(2), foot_p0, foot_v0, foot_pf, foot_vf);
   return std::make_tuple(foot_pt, foot_vt);
 }

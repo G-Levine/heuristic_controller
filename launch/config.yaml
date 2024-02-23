@@ -12,7 +12,9 @@ heuristic_controller:
     swing_joint_kp: 0.5
     swing_joint_kd: 0.05
 
-    balancing_force_kp: 0.1
+    balancing_force_kp: 0.0
     balancing_force_kd: 0.0
     balancing_torque_kp: 0.0
     balancing_torque_kd: 0.0
+
+    max_normal_force: 25.0

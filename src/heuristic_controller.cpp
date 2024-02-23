@@ -180,7 +180,7 @@ controller_interface::return_type HeuristicController::update(
     auto yaw_rot = extractYawQuaternion(curr_control_step_state.body_rot_in_world);
     control_step_inputs_.body_vel_in_world_desired = yaw_rot * body_vel_desired;
     control_step_inputs_.body_angvel_in_world_desired = body_angvel_desired;
-    control_step_inputs_.body_pos_in_world_desired += control_step_inputs_.body_vel_in_world_desired * period.seconds();
+    // control_step_inputs_.body_pos_in_world_desired += control_step_inputs_.body_vel_in_world_desired * period.seconds();
 
     // Update the desired body orientation
     Eigen::AngleAxisd rot_delta(control_step_inputs_.body_angvel_in_world_desired.norm() * period.seconds(), control_step_inputs_.body_angvel_in_world_desired.normalized());
@@ -283,24 +283,38 @@ controller_interface::return_type HeuristicController::update(
     return controller_interface::return_type::OK;
   }
 
+  // Update the desired body height based on the contact centroid z-axis position
+  control_step_inputs_.body_pos_in_world_desired(2) = curr_control_step_state.contact_centroid_pos_in_world(2) + params_.body_height;
+
   // Get balancing forces from the balancing QP
   Eigen::Vector3d body_pos_error = control_step_inputs_.body_pos_in_world_desired - curr_control_step_state.body_pos_in_world;
   Eigen::Vector3d body_vel_error = control_step_inputs_.body_vel_in_world_desired - curr_control_step_state.body_vel_in_world;
   Eigen::Vector3d body_rot_error = (control_step_inputs_.body_rot_in_world_desired * curr_control_step_state.body_rot_in_world.inverse()).vec();
   Eigen::Vector3d body_angvel_error = control_step_inputs_.body_angvel_in_world_desired - curr_control_step_state.body_angvel_in_world;
-  Eigen::Vector3d balancing_force_desired = body_pos_error * params_.balancing_force_kp + body_vel_error * params_.balancing_force_kd;
+  Eigen::Vector3d gravity_compensation = Eigen::Vector3d::UnitZ() * params_.mass * 9.81;
+  Eigen::Vector3d balancing_force_desired = gravity_compensation + body_pos_error * params_.balancing_force_kp + body_vel_error * params_.balancing_force_kd;
   Eigen::Vector3d balancing_torque_desired = body_rot_error * params_.balancing_torque_kp + body_angvel_error * params_.balancing_torque_kd;
 
   Eigen::Matrix<double, 3, 4> balancing_forces_in_world = balancingQP(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
 
+  // balancing_forces_in_world.setZero();
+  // balancing_forces_in_world.col(0) = -gravity_compensation / 4.0;
+
   std::cout << "Pos error: \n" << body_pos_error << std::endl;
+  std::cout << "Pos desired: \n" << control_step_inputs_.body_pos_in_world_desired << std::endl;
+  std::cout << "Pos in world: \n" << curr_control_step_state.body_pos_in_world << std::endl;
   std::cout << "Vel error: \n" << body_vel_error << std::endl;
+  std::cout << "Vel desired: \n" << control_step_inputs_.body_vel_in_world_desired << std::endl;
+  std::cout << "Vel in world: \n" << curr_control_step_state.body_vel_in_world << std::endl;
   std::cout << "Rot error: \n" << body_rot_error << std::endl;
+  std::cout << "Rot desired: \n" << control_step_inputs_.body_rot_in_world_desired << std::endl;
+  std::cout << "Rot in world: \n" << curr_control_step_state.body_rot_in_world << std::endl;
   std::cout << "Angvel error: \n" << body_angvel_error << std::endl;
+  std::cout << "Angvel desired: \n" << control_step_inputs_.body_angvel_in_world_desired << std::endl;
+  std::cout << "Angvel in world: \n" << curr_control_step_state.body_angvel_in_world << std::endl;
   std::cout << "Foot pos in body rotated: \n" << foot_pos_in_body_rotated << std::endl;
   std::cout << "Joint angles: \n" << curr_control_step_state.joint_pos << std::endl;
   std::cout << "Balancing forces: \n" << balancing_forces_in_world << std::endl;
-  balancing_forces_in_world.setZero();
 
   // Obtain the desired actuator commands for each leg depending on whether it's in swing or stance
   if (curr_control_step_state.state == locomotion_state::STAND || curr_control_step_state.state == locomotion_state::WALK) {

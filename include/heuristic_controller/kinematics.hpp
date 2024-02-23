@@ -138,7 +138,7 @@ Eigen::Matrix<double, 3, 4> four_legs_fk(const Eigen::Matrix<double, 3, 4>& alph
             config.LEG_L2
         );
 
-        r_body_foot.col(i) = leg_fk(alpha(0, i) * config.MOTOR_DIRECTIONS(0, i), alpha(1, i) * config.MOTOR_DIRECTIONS(1, i), alpha(2, i) * config.MOTOR_DIRECTIONS(2, i), leg_config);
+        r_body_foot.col(i) = leg_fk(alpha(0, i) * config.MOTOR_DIRECTIONS(0, i), alpha(1, i) * config.MOTOR_DIRECTIONS(1, i), alpha(2, i) * config.MOTOR_DIRECTIONS(2, i) - 45.0 * M_PI / 180.0, leg_config);
     }
 
     return r_body_foot;
@@ -164,7 +164,7 @@ Eigen::Matrix<double, 3, 4> four_legs_ik(const Eigen::Matrix<double, 3, 4>& r_bo
         Eigen::Vector3d leg_alpha = leg_ik(target_pos, leg_config, guess);
 
         // Adjust for the mechanical offset, if necessary
-        leg_alpha(2) += M_PI / 4; // Adding 45 degrees in radians to the third joint
+        leg_alpha(2) += 45.0 * M_PI / 180.0;
 
         alpha.col(i) = leg_alpha.cwiseProduct(config.MOTOR_DIRECTIONS.col(i)); // Apply motor directions to results
     }
@@ -186,7 +186,7 @@ std::array<Eigen::Matrix3d, 4> four_legs_jacobian(const Eigen::Matrix<double, 3,
             config.LEG_L2
         );
 
-        Eigen::Matrix3d J_leg = leg_jacobian(alpha(0, i) * config.MOTOR_DIRECTIONS(0, i), alpha(1, i) * config.MOTOR_DIRECTIONS(1, i), alpha(2, i) * config.MOTOR_DIRECTIONS(2, i), leg_config);
+        Eigen::Matrix3d J_leg = leg_jacobian(alpha(0, i) * config.MOTOR_DIRECTIONS(0, i), alpha(1, i) * config.MOTOR_DIRECTIONS(1, i), alpha(2, i) * config.MOTOR_DIRECTIONS(2, i) - 45.0 * M_PI / 180.0, leg_config);
         for (int j = 0; j < 3; ++j) {
             jacobians[i].col(j) = J_leg.col(j) * config.MOTOR_DIRECTIONS(j, i); // Apply motor directions to results
         }
@@ -267,13 +267,15 @@ Eigen::Vector3d calculateAverageContactValue(const Eigen::Matrix<double, 3, 4>& 
     Eigen::Vector3d averagePosition = Eigen::Vector3d::Zero();
     int contactCount = 0;
     for (int i = 0; i < 4; ++i) {
-        if (contact_states[i]) {
+        if (contact_states(i)) {
             averagePosition += positions.col(i);
             contactCount++;
         }
     }
     if (contactCount > 0) {
         averagePosition /= contactCount;
+    } else {
+        averagePosition /= 4.0;
     }
     return averagePosition;
 }
