@@ -240,8 +240,11 @@ controller_interface::return_type HeuristicController::update(
   if (prev_control_step_state_.state == locomotion_state::INIT) {
     // Set the initial desired body orientation to be the current body orientation
     control_step_inputs_.body_rot_in_world_desired = curr_control_step_state.body_rot_in_world;
+    control_step_inputs_.body_pos_in_world_desired.setZero();
+    control_step_inputs_.body_angvel_in_world_desired.setZero();
     curr_control_step_state.state = locomotion_state::STAND;
     curr_control_step_state.contact_states.setOnes();
+    curr_control_step_state.contact_centroid_pos_in_world.setZero();
     prev_control_step_state_ = curr_control_step_state;
     RCLCPP_INFO(get_node()->get_logger(), "Switching from init to stand");
     return controller_interface::return_type::OK;
@@ -297,7 +300,12 @@ controller_interface::return_type HeuristicController::update(
 
   Eigen::Matrix<double, 3, 4> balancing_forces_in_world = balancingQP(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
 
-  // balancing_forces_in_world.setZero();
+  if (body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {
+    RCLCPP_INFO(get_node()->get_logger(), "Balancing forces are too large, stopping the robot");
+    curr_control_step_state.state = locomotion_state::STOP;
+    balancing_forces_in_world.setZero();
+  }
+
   // balancing_forces_in_world.col(0) = -gravity_compensation / 4.0;
 
   std::cout << "Pos error: \n" << body_pos_error << std::endl;
