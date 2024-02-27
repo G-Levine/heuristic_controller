@@ -42,6 +42,7 @@ struct control_step_state {
     Eigen::Matrix<double, 3, 4> swing_vfs;
     Eigen::Matrix<double, 3, 4> foot_pos_in_world;
     Eigen::Matrix<double, 3, 4> foot_vel_in_world;
+    Eigen::Matrix<double, 3, 4> balancing_forces_in_world;
 
     // Joint states
     Eigen::Matrix<double, 3, 4> joint_pos;
@@ -127,6 +128,8 @@ class HeuristicController : public controller_interface::ControllerInterface {
 
   control_step_state prev_control_step_state_;
   control_step_inputs control_step_inputs_;
+
+  rclcpp::Time init_time_;
 };
 
 }  // namespace heuristic_controller

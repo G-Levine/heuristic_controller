@@ -20,8 +20,8 @@ public:
         
         ABDUCTION_OFFSETS << -0.018, 0.018, -0.018, 0.018;
 
-        LEG_L1_X = 0.07;
-        LEG_L1_Z = 0.05;
+        LEG_L1_X = 0.0685;
+        LEG_L1_Z = 0.0494;
         LEG_L2 = 0.088;
 
         MOTOR_DIRECTIONS << -1, 1, -1, 1,
@@ -195,73 +195,73 @@ std::array<Eigen::Matrix3d, 4> four_legs_jacobian(const Eigen::Matrix<double, 3,
     return jacobians;
 }
 
-Eigen::Matrix<double, 3, 4> balancingQP(const Eigen::Matrix<double, 3, 4>& r,
-                                                   const Eigen::Vector4i& s,
-                                                   const Eigen::Vector3d& force_desired,
-                                                   const Eigen::Vector3d& torque_desired,
-                                                   double minZ, double maxZ, double frictionCoefficient) {
-    // Check if no legs are in contact
-    if (s.sum() == 0) {
-        return Eigen::Matrix<double, 3, 4>::Zero();
-    }
+// Eigen::Matrix<double, 3, 4> balancingQP(const Eigen::Matrix<double, 3, 4>& r,
+//                                                    const Eigen::Vector4i& s,
+//                                                    const Eigen::Vector3d& force_desired,
+//                                                    const Eigen::Vector3d& torque_desired,
+//                                                    double minZ, double maxZ, double frictionCoefficient) {
+//     // Check if no legs are in contact
+//     if (s.sum() == 0) {
+//         return Eigen::Matrix<double, 3, 4>::Zero();
+//     }
 
-    // System matrix A and vector b
-    Eigen::Matrix<double, 6, 12> A = Eigen::Matrix<double, 6, 12>::Zero(); // Adjusted for 4 legs, 3 dimensions each
-    Eigen::Matrix<double, 6, 1> b;
-    b << force_desired, torque_desired;
+//     // System matrix A and vector b
+//     Eigen::Matrix<double, 6, 12> A = Eigen::Matrix<double, 6, 12>::Zero(); // Adjusted for 4 legs, 3 dimensions each
+//     Eigen::Matrix<double, 6, 1> b;
+//     b << force_desired, torque_desired;
 
-    // Populate A based on contact status
-    for (int i = 0; i < 4; ++i) {
-        if (s(i) == 1) {
-            // Force part
-            A.block<3, 3>(0, 3 * i) = Eigen::Matrix3d::Identity();
+//     // Populate A based on contact status
+//     for (int i = 0; i < 4; ++i) {
+//         if (s(i) == 1) {
+//             // Force part
+//             A.block<3, 3>(0, 3 * i) = Eigen::Matrix3d::Identity();
             
-            // Torque part
-            Eigen::Matrix3d r_skew;
-            r_skew << 0, -r.col(i).z(), r.col(i).y(),
-                      r.col(i).z(), 0, -r.col(i).x(),
-                      -r.col(i).y(), r.col(i).x(), 0;
-            A.block<3, 3>(3, 3 * i) = r_skew;
-        }
-    }
+//             // Torque part
+//             Eigen::Matrix3d r_skew;
+//             r_skew << 0, -r.col(i).z(), r.col(i).y(),
+//                       r.col(i).z(), 0, -r.col(i).x(),
+//                       -r.col(i).y(), r.col(i).x(), 0;
+//             A.block<3, 3>(3, 3 * i) = r_skew;
+//         }
+//     }
 
-    // Solve the least squares problem using QR decomposition, suitable for fixed-size matrices
-    // Eigen::Matrix<double, 12, 1> f = A.householderQr().solve(b);
+//     // Solve the least squares problem using QR decomposition, suitable for fixed-size matrices
+//     // Eigen::Matrix<double, 12, 1> f = A.householderQr().solve(b);
 
-    // Solve the least squares problem using SVD decomposition, suitable for potentially ill-conditioned matrices
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
-    Eigen::Matrix<double, 12, 1> f = svd.solve(b);
+//     // Solve the least squares problem using SVD decomposition, suitable for potentially ill-conditioned matrices
+//     Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+//     Eigen::Matrix<double, 12, 1> f = svd.solve(b);
 
-    // Apply Z Constraints
-    for (int i = 0; i < 4; ++i) {
-        f(3*i + 2) = std::min(std::max(f(3*i + 2), minZ), maxZ); // Clamp z-component
-    }
+//     // Apply Z Constraints
+//     for (int i = 0; i < 4; ++i) {
+//         f(3*i + 2) = std::min(std::max(f(3*i + 2), minZ), maxZ); // Clamp z-component
+//     }
 
-    // Apply Friction Cone Constraints
-    for (int i = 0; i < 4; ++i) {
-        double fz = f(3*i + 2); // Z component of the force
-        double maxLateralForce = fz * frictionCoefficient;
+//     // Apply Friction Cone Constraints
+//     for (int i = 0; i < 4; ++i) {
+//         double fz = f(3*i + 2); // Z component of the force
+//         double maxLateralForce = fz * frictionCoefficient;
 
-        // Calculate the magnitude of the lateral force
-        double lateralForceMagnitude = sqrt(pow(f(3*i), 2) + pow(f(3*i + 1), 2));
+//         // Calculate the magnitude of the lateral force
+//         double lateralForceMagnitude = sqrt(pow(f(3*i), 2) + pow(f(3*i + 1), 2));
         
-        // If the lateral force exceeds the maximum allowed by the friction cone, scale it down
-        if (lateralForceMagnitude > maxLateralForce) {
-            double scalingFactor = maxLateralForce / lateralForceMagnitude;
-            f(3*i) *= scalingFactor; // Scale x-component
-            f(3*i + 1) *= scalingFactor; // Scale y-component
-        }
-    }
+//         // If the lateral force exceeds the maximum allowed by the friction cone, scale it down
+//         if (lateralForceMagnitude > maxLateralForce) {
+//             double scalingFactor = maxLateralForce / lateralForceMagnitude;
+//             f(3*i) *= scalingFactor; // Scale x-component
+//             f(3*i + 1) *= scalingFactor; // Scale y-component
+//         }
+//     }
 
-    // Reshape the result to a 3x4 matrix
-    Eigen::Matrix<double, 3, 4> result;
-    for (int i = 0; i < 4; ++i) {
-        result.col(i) = f.block<3, 1>(3 * i, 0);
-    }
+//     // Reshape the result to a 3x4 matrix
+//     Eigen::Matrix<double, 3, 4> result;
+//     for (int i = 0; i < 4; ++i) {
+//         result.col(i) = f.block<3, 1>(3 * i, 0);
+//     }
 
-    // Flip the signs to output the forces applied by the feet
-    return -result;
-}
+//     // Flip the signs to output the forces applied by the feet
+//     return -result;
+// }
 
 Eigen::Vector3d calculateAverageContactValue(const Eigen::Matrix<double, 3, 4>& positions, const Eigen::Vector4i& contact_states) {
     Eigen::Vector3d averagePosition = Eigen::Vector3d::Zero();

@@ -35,6 +35,18 @@ heuristic_controller:
     description: 'Velocity gains for the joints in swing phase'
   }
 
+  stance_joint_kp: {
+    type: double,
+    default_value: 0.0,
+    description: 'Position gains for the joints in stance phase'
+  }
+
+  stance_joint_kd: {
+    type: double,
+    default_value: 0.1,
+    description: 'Velocity gains for the joints in stance phase'
+  }
+
   init_duration: {
     type: double,
     default_value: 2.0,
@@ -73,7 +85,7 @@ heuristic_controller:
 
   phase_offsets: {
     type: double_array,
-    default_value: [0.0, 0.5, 0.0, 0.5],
+    default_value: [0.0, 0.5, 0.5, 0.0],
     description: 'Phase offsets for the legs'
   }
 
