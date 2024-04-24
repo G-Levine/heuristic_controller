@@ -324,10 +324,8 @@ controller_interface::return_type HeuristicController::update(
     }
     if (prev_control_step_state_.contact_states.sum() == 4) {
       // If all legs are in stance, set the desired body position to be centered above the contact centroid
-      // control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.contact_centroid_pos_in_world(0);
-      // control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.contact_centroid_pos_in_world(1);
-      control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
-      control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
+      control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.contact_centroid_pos_in_world(0);
+      control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.contact_centroid_pos_in_world(1);
     } else {
       // If any leg is in swing, nullify the x and y effects of the body position controller
       control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
