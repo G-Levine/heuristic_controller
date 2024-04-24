@@ -91,6 +91,7 @@ controller_interface::CallbackReturn HeuristicController::on_activate(
   // Populate the previous control step state
   prev_control_step_state_.state = locomotion_state::INIT;
   prev_control_step_state_.global_time = 0.0;
+  prev_control_step_state_.body_pos_in_world(2) = params_.body_height;
   prev_control_step_state_.contact_states.setOnes();
   // Reset the gait phases
   for (int i = 0; i < 4; i++) {
@@ -119,6 +120,8 @@ controller_interface::return_type HeuristicController::update(
   curr_control_step_state.global_time = (time - init_time_).seconds();
 
   // Get the latest observation
+  Eigen::Vector3d body_angvel_in_body;
+  Eigen::Vector3d body_accel_in_body;
   try {
     curr_control_step_state.body_rot_in_world.w() = state_interfaces_map_.at(params_.imu_sensor_name)
                         .at("orientation.w")
@@ -136,8 +139,8 @@ controller_interface::return_type HeuristicController::update(
                         .at("orientation.z")
                         .get()
                         .get_value();
+    curr_control_step_state.body_rot_in_world.normalize();
 
-    Eigen::Vector3d body_angvel_in_body;
     body_angvel_in_body.x() = state_interfaces_map_.at(params_.imu_sensor_name)
                    .at("angular_velocity.x")
                    .get()
@@ -151,6 +154,20 @@ controller_interface::return_type HeuristicController::update(
                   .get()
                   .get_value();
     curr_control_step_state.body_angvel_in_world = curr_control_step_state.body_rot_in_world * body_angvel_in_body;                      
+
+    body_accel_in_body.x() = state_interfaces_map_.at(params_.imu_sensor_name)
+                   .at("linear_acceleration.x")
+                   .get()
+                   .get_value();
+    body_accel_in_body.y() = state_interfaces_map_.at(params_.imu_sensor_name)
+                   .at("linear_acceleration.y")
+                   .get()
+                   .get_value();
+    body_accel_in_body.z() = state_interfaces_map_.at(params_.imu_sensor_name)
+                   .at("linear_acceleration.z")
+                   .get()
+                   .get_value();
+    curr_control_step_state.body_accel_in_world = curr_control_step_state.body_rot_in_world * body_accel_in_body;
 
     // read joint states from hardware interface
     for (int i = 0; i < 4; i++) {
@@ -222,8 +239,10 @@ controller_interface::return_type HeuristicController::update(
     }
   }
 
+
   // If the contact states changed, update the contact centroid position
   Eigen::Vector3d contact_centroid_pos_delta = calculateAverageContactValue(prev_control_step_state_.foot_pos_in_world, curr_control_step_state.contact_states) - calculateAverageContactValue(prev_control_step_state_.foot_pos_in_world, prev_control_step_state_.contact_states);
+  contact_centroid_pos_delta(2) = 0.0; // TODO maybe remove this
   curr_control_step_state.contact_centroid_pos_in_world = prev_control_step_state_.contact_centroid_pos_in_world + contact_centroid_pos_delta;
 
   // Do state estimation
@@ -239,8 +258,44 @@ controller_interface::return_type HeuristicController::update(
   }
   Eigen::Vector3d contact_centroid_pos_in_body_rotated = calculateAverageContactValue(foot_pos_in_body_rotated, curr_control_step_state.contact_states);
   Eigen::Vector3d contact_centroid_vel_in_body_rotated = calculateAverageContactValue(foot_vel_in_body_rotated, curr_control_step_state.contact_states);
-  curr_control_step_state.body_pos_in_world = curr_control_step_state.contact_centroid_pos_in_world - contact_centroid_pos_in_body_rotated;
-  curr_control_step_state.body_vel_in_world = -contact_centroid_vel_in_body_rotated;
+  // curr_control_step_state.body_pos_in_world = curr_control_step_state.contact_centroid_pos_in_world - contact_centroid_pos_in_body_rotated;
+  curr_control_step_state.body_pos_in_world = params_.body_pos_smoothing * prev_control_step_state_.body_pos_in_world + (1 - params_.body_pos_smoothing) * (curr_control_step_state.contact_centroid_pos_in_world - contact_centroid_pos_in_body_rotated);
+  // curr_control_step_state.body_vel_in_world = -contact_centroid_vel_in_body_rotated;
+  curr_control_step_state.body_vel_in_world = params_.body_vel_smoothing * prev_control_step_state_.body_vel_in_world + (1 - params_.body_vel_smoothing) * (-contact_centroid_vel_in_body_rotated);
+
+  // Override state estimation with ground truth from simulator
+  try {
+    curr_control_step_state.body_pos_in_world(0) = state_interfaces_map_.at("mujoco_sensor")
+                        .at("body_pos.x")
+                        .get()
+                        .get_value();
+    curr_control_step_state.body_pos_in_world(1) = state_interfaces_map_.at("mujoco_sensor")
+                        .at("body_pos.y")
+                        .get()
+                        .get_value();
+    curr_control_step_state.body_pos_in_world(2) = state_interfaces_map_.at("mujoco_sensor")
+                        .at("body_pos.z")
+                        .get()
+                        .get_value();
+    curr_control_step_state.body_vel_in_world(0) = state_interfaces_map_.at("mujoco_sensor")
+                        .at("body_vel.x")
+                        .get()
+                        .get_value();
+    curr_control_step_state.body_vel_in_world(1) = state_interfaces_map_.at("mujoco_sensor")
+                        .at("body_vel.y")
+                        .get()
+                        .get_value();
+    curr_control_step_state.body_vel_in_world(2) = state_interfaces_map_.at("mujoco_sensor")
+                        .at("body_vel.z")
+                        .get()
+                        .get_value();
+  }
+  catch (const std::exception &e) {
+    fprintf(stderr, "Exception thrown during update stage with message: %s \n",
+            e.what());
+    return controller_interface::return_type::ERROR;
+  }
+
   for (int i = 0; i < 4; i++) {
     curr_control_step_state.foot_pos_in_world.col(i) = curr_control_step_state.body_pos_in_world + foot_pos_in_body_rotated.col(i);
     curr_control_step_state.foot_vel_in_world.col(i) = curr_control_step_state.body_vel_in_world + foot_vel_in_body_rotated.col(i);
@@ -269,8 +324,10 @@ controller_interface::return_type HeuristicController::update(
     }
     if (prev_control_step_state_.contact_states.sum() == 4) {
       // If all legs are in stance, set the desired body position to be centered above the contact centroid
-      control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.contact_centroid_pos_in_world(0);
-      control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.contact_centroid_pos_in_world(1);
+      // control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.contact_centroid_pos_in_world(0);
+      // control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.contact_centroid_pos_in_world(1);
+      control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
+      control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
     } else {
       // If any leg is in swing, nullify the x and y effects of the body position controller
       control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
@@ -321,27 +378,33 @@ controller_interface::return_type HeuristicController::update(
   Eigen::Vector3d balancing_torque_desired = body_rot_error * params_.balancing_torque_kp + body_angvel_error * params_.balancing_torque_kd;
 
   curr_control_step_state.balancing_forces_in_world = balancingQP(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
+  // curr_control_step_state.balancing_forces_in_world = balancingLinearSolve(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
+  // curr_control_step_state.balancing_forces_in_world = Eigen::Matrix<double, 3, 4>::Zero();
 
-  if (body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {
-    RCLCPP_INFO(get_node()->get_logger(), "Balancing forces are too large, stopping the robot");
-    curr_control_step_state.state = locomotion_state::STOP;
-    curr_control_step_state.balancing_forces_in_world.setZero();
-  }
+  // if (body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {
+  //   RCLCPP_INFO(get_node()->get_logger(), "Balancing forces are too large, stopping the robot");
+  //   curr_control_step_state.state = locomotion_state::STOP;
+  //   curr_control_step_state.balancing_forces_in_world.setZero();
+  // }
 
-  // std::cout << "Pos error: \n" << body_pos_error << std::endl;
+
+  std::cout << "Pos error: \n" << body_pos_error << std::endl;
   // std::cout << "Pos desired: \n" << control_step_inputs_.body_pos_in_world_desired << std::endl;
-  // std::cout << "Pos in world: \n" << curr_control_step_state.body_pos_in_world << std::endl;
+  std::cout << "Pos in world: \n" << curr_control_step_state.body_pos_in_world << std::endl;
   // std::cout << "Vel error: \n" << body_vel_error << std::endl;
   // std::cout << "Vel desired: \n" << control_step_inputs_.body_vel_in_world_desired << std::endl;
-  // std::cout << "Vel in world: \n" << curr_control_step_state.body_vel_in_world << std::endl;
-  // std::cout << "Rot error: \n" << body_rot_error << std::endl;
+  std::cout << "Vel in world: \n" << curr_control_step_state.body_vel_in_world << std::endl;
+  std::cout << "Rot error: \n" << body_rot_error << std::endl;
   // std::cout << "Rot desired: \n" << control_step_inputs_.body_rot_in_world_desired << std::endl;
-  // std::cout << "Rot in world: \n" << curr_control_step_state.body_rot_in_world << std::endl;
-  // std::cout << "Angvel error: \n" << body_angvel_error << std::endl;
+  std::cout << "Rot in world: \n" << curr_control_step_state.body_rot_in_world << std::endl;
+  std::cout << "Angvel error: \n" << body_angvel_error << std::endl;
   // std::cout << "Angvel desired: \n" << control_step_inputs_.body_angvel_in_world_desired << std::endl;
-  // std::cout << "Angvel in world: \n" << curr_control_step_state.body_angvel_in_world << std::endl;
-  // std::cout << "Foot pos in body rotated: \n" << foot_pos_in_body_rotated << std::endl;
-  // std::cout << "Joint angles: \n" << curr_control_step_state.joint_pos << std::endl;
+  std::cout << "Angvel in world: \n" << curr_control_step_state.body_angvel_in_world << std::endl;
+  std::cout << "Angvel in body: \n" << body_angvel_in_body << std::endl;
+  std::cout << "Foot pos in body rotated: \n" << foot_pos_in_body_rotated << std::endl;
+  std::cout << "Foot vel in body rotated: \n" << foot_vel_in_body_rotated << std::endl;
+  std::cout << "Joint angles: \n" << curr_control_step_state.joint_pos << std::endl;
+  std::cout << "Joint velocities: \n" << curr_control_step_state.joint_vel << std::endl;
   std::cout << "Balancing forces: \n" << curr_control_step_state.balancing_forces_in_world << std::endl;
 
   // Obtain the desired actuator commands for each leg depending on whether it's in swing or stance
@@ -382,7 +445,7 @@ controller_interface::return_type HeuristicController::update(
         foot_vel_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_vel_in_world_desired - curr_control_step_state.body_vel_in_world - curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_world_desired - curr_control_step_state.body_pos_in_world));
 
         // Calculate the desired joint velocities
-        curr_control_step_state.joint_vel_desired.col(i) = jacobians[i].inverse() * foot_vel_in_body_desired.col(i);
+        curr_control_step_state.joint_vel_desired.col(i).setZero();//  = jacobians[i].inverse() * foot_vel_in_body_desired.col(i);
 
         // Set joint kps and kds to swing values
         // Set joint feedforward torques to zero
@@ -397,7 +460,7 @@ controller_interface::return_type HeuristicController::update(
         // Set joint kps and kds to stance values
         curr_control_step_state.joint_kp_desired.col(i) = Eigen::Vector3d::Ones() * params_.stance_joint_kp;
         curr_control_step_state.joint_kd_desired.col(i) = Eigen::Vector3d::Ones() * params_.stance_joint_kd;
-        // curr_control_step_state.joint_pos_desired.col(i) = Eigen::Vector3d::Zero();
+        curr_control_step_state.joint_pos_desired.col(i).setZero();
         curr_control_step_state.joint_vel_desired.col(i).setZero();
       }
     }
@@ -413,7 +476,19 @@ controller_interface::return_type HeuristicController::update(
     // std::cout << std::endl;
 
     // Apply IK to obtain the desired joint positions
-    curr_control_step_state.joint_pos_desired = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
+    // curr_control_step_state.joint_pos_desired = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
+    Eigen::Matrix<double, 3, 4> ik_joint_pos = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
+    for (int i = 0; i < 4; i++) {
+      if (curr_control_step_state.contact_states(i) == 0) {
+        curr_control_step_state.joint_pos_desired.col(i) = ik_joint_pos.col(i);
+      }
+    }
+
+    std::cout << "Desired joint positions: \n" << curr_control_step_state.joint_pos_desired << std::endl;
+    // std::cout << "Desired joint velocities: \n" << curr_control_step_state.joint_vel_desired << std::endl;
+    // std::cout << "Desired joint kps: \n" << curr_control_step_state.joint_kp_desired << std::endl;
+    // std::cout << "Desired joint kds: \n" << curr_control_step_state.joint_kd_desired << std::endl;
+    // std::cout << "Desired joint torques: \n" << curr_control_step_state.joint_torque_desired << std::endl;
   }
 
 

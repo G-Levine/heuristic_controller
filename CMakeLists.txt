@@ -17,7 +17,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(generate_parameter_library REQUIRED)
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 generate_parameter_library(
   heuristic_controller_parameters # cmake target name for the parameter library

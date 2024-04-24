@@ -33,6 +33,7 @@ struct control_step_state {
     Eigen::Vector3d body_vel_in_world;
     Eigen::Quaterniond body_rot_in_world;
     Eigen::Vector3d body_angvel_in_world;
+    Eigen::Vector3d body_accel_in_world;
     Eigen::Vector4i contact_states;
     Eigen::Vector4d swing_t0s;
     Eigen::Vector4d swing_tfs;

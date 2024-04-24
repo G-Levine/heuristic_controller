@@ -17,6 +17,18 @@ heuristic_controller:
     description: 'Mass of the robot (kg)'
   }
 
+  body_pos_smoothing: {
+    type: double,
+    default_value: 0.9,
+    description: 'Exponential smoothing factor for the body position'
+  }
+
+  body_vel_smoothing: {
+    type: double,
+    default_value: 0.9,
+    description: 'Exponential smoothing factor for the body velocity'
+  }
+
   joint_names: {
     type: string_array,
     default_value: ['leg_front_r_1', 'leg_front_r_2', 'leg_front_r_3', 'leg_front_l_1', 'leg_front_l_2', 'leg_front_l_3', 'leg_back_r_1', 'leg_back_r_2', 'leg_back_r_3', 'leg_back_l_1', 'leg_back_l_2', 'leg_back_l_3'],

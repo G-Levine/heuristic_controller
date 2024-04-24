@@ -7,16 +7,29 @@ controller_manager:
 
 heuristic_controller:
   ros__parameters:
-    gait_frequency: 1.0
+    gait_frequency: 1.0 #0.00001
+    # swing_durations: [0.3, 0.3, 0.3, 0.3]
 
-    swing_joint_kp: 0.5
-    swing_joint_kd: 0.05
+    body_height: 0.15
 
-    balancing_force_kp: 1.0
-    balancing_force_kd: 0.1
-    balancing_torque_kp: 10.0
-    balancing_torque_kd: 1.0
+    swing_joint_kp: 7.5
+    swing_joint_kd: 0.5
 
+    stance_joint_kp: 0.0
+    stance_joint_kd: 0.05
+
+    balancing_force_kp: 1000.0
+    balancing_force_kd: 10.0
+    balancing_torque_kp: 50.0
+    balancing_torque_kd: 50.0
+
+    mass: 0.0
     min_normal_force: 1.0
-    max_normal_force: 25.0
-    mass: 3.0
+    max_normal_force: 50.0
+    friction_coefficient: 0.5
+
+    stand_controller_max_body_vel: 10000.0 #0.1 #10000.0
+    stand_controller_max_body_angvel: 9999.0
+
+    body_pos_smoothing: 1.0
+    body_vel_smoothing: 1.0
