@@ -160,6 +160,7 @@ Eigen::Matrix<double, 3, 4> four_legs_ik(const Eigen::Matrix<double, 3, 4>& r_bo
 
         Eigen::Vector3d target_pos = r_body_foot.col(i);
         Eigen::Vector3d guess = initial_guess.col(i).cwiseProduct(config.MOTOR_DIRECTIONS.col(i)); // Apply motor directions to initial guess
+        guess(2) -= 45.0 * M_PI / 180.0; // Adjust for the mechanical offset
 
         Eigen::Vector3d leg_alpha = leg_ik(target_pos, leg_config, guess);
 
