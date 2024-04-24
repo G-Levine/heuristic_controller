@@ -27,10 +27,11 @@ std::tuple<double, double, double> getFutureBodyState(double t, double x0,
 }
 
 double getNextFootholdRelativeToBody(double stance_time, double body_height,
-                                     double v0, double vf) {
-  double omega = sqrt(9.81 / body_height);
-  double position = -(vf - v0) /
-                    (omega * tanh(omega * stance_time));
+                                     double v0, double vf, double footstep_gain) {
+  // double omega = sqrt(9.81 / body_height);
+  // double position = -(vf - v0) /
+  //                   (omega * tanh(omega * stance_time));
+  double position = stance_time / 2.0 * v0 + footstep_gain * (v0 - vf);
   return position;
 }
 
@@ -95,15 +96,15 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosVel(
     double swing_height, double x, double y, double yaw, double vx, double vy,
     double yaw_vel, double vx_des, double vy_des, double yaw_vel_des,
     double foot_x_offset, double foot_y_offset, const Eigen::Vector3d& foot_p0,
-    const Eigen::Vector3d& foot_v0) {
+    const Eigen::Vector3d& foot_v0, double footstep_gain, double max_footstep_distance) {
   // Calculate the body state at the end of the swing phase
   auto [xf, yf, yawf] =
       getFutureBodyState(tf - t, x, y, yaw, vx, vy, yaw_vel);
   // Calculate the linear offset of the next foothold disregarding yaw
   double x_offset =
-      getNextFootholdRelativeToBody(stance_time, body_height, vx, vx_des);
+      getNextFootholdRelativeToBody(stance_time, body_height, vx, vx_des, footstep_gain);
   double y_offset =
-      getNextFootholdRelativeToBody(stance_time, body_height, vy, vy_des);
+      getNextFootholdRelativeToBody(stance_time, body_height, vy, vy_des, footstep_gain);
   // Apply the effect of yaw to the next foothold
   double foothold_yaw = yawf + 0.5 * stance_time * yaw_vel_des;
   double x_offset_rot =
@@ -111,10 +112,17 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosVel(
   double y_offset_rot =
       foot_x_offset * sin(foothold_yaw) + foot_y_offset * cos(foothold_yaw);
   // Calculate the next foothold position
-  double foot_x_next = xf + x_offset + x_offset_rot;
-  double foot_y_next = yf + y_offset + y_offset_rot;
+  double foot_x_next = x_offset;
+  double foot_y_next = y_offset;
+  // Limit the footstep distance
+  double distance = sqrt(pow(foot_x_next, 2) + pow(foot_y_next, 2));
+  if (distance > max_footstep_distance) {
+    foot_x_next *= max_footstep_distance / distance;
+    foot_y_next *= max_footstep_distance / distance;
+  }
   // Evaluate the swing trajectory at the current time
-  Eigen::Vector3d foot_pf(foot_x_next, foot_y_next, foot_p0(2));
+  // Eigen::Vector3d foot_pf(xf + foot_x_next + x_offset_rot, yf + foot_y_next + y_offset_rot, foot_p0(2));
+  Eigen::Vector3d foot_pf(foot_x_next + x_offset_rot, foot_y_next + y_offset_rot, foot_p0(2));
   Eigen::Vector3d foot_vf(0.0, 0.0, 0.0);
   auto [foot_pt, foot_vt] = evaluateSwingTrajectory(
       t, t0, tf, swing_height + foot_p0(2), foot_p0, foot_v0, foot_pf, foot_vf);

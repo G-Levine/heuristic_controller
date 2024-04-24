@@ -43,6 +43,8 @@ struct control_step_state {
     Eigen::Matrix<double, 3, 4> swing_vfs;
     Eigen::Matrix<double, 3, 4> foot_pos_in_world;
     Eigen::Matrix<double, 3, 4> foot_vel_in_world;
+    Eigen::Matrix<double, 3, 4> foot_pos_in_body_rotated;
+    Eigen::Matrix<double, 3, 4> foot_vel_in_body_rotated;
     Eigen::Matrix<double, 3, 4> balancing_forces_in_world;
 
     // Joint states

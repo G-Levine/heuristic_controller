@@ -1,35 +1,43 @@
 controller_manager:
   ros__parameters:
-    update_rate: 500  # Hz
+    update_rate: 1000  # Hz
 
     heuristic_controller:
       type: heuristic_controller/HeuristicController
 
 heuristic_controller:
   ros__parameters:
-    gait_frequency: 1.0 #0.00001
-    # swing_durations: [0.3, 0.3, 0.3, 0.3]
+    gait_frequency: 2.0 #0.00001
+    # phase_offsets: [0.0, 0.25, 0.5, 0.75]
+    swing_durations: [0.3, 0.3, 0.3, 0.3]
+
+    # foot_x_origins: [0.075, 0.075, -0.075, -0.075]
+    # foot_y_origins: [-0.075, 0.075, -0.075, 0.075]
+
+    footstep_gain: 0.03
+    max_footstep_distance: 0.075
 
     body_height: 0.15
+    swing_height: 0.075
 
     swing_joint_kp: 7.5
     swing_joint_kd: 0.5
 
-    stance_joint_kp: 0.0
-    stance_joint_kd: 0.05
+    stance_joint_kp: 1.0
+    stance_joint_kd: 0.1
 
     balancing_force_kp: 1000.0
     balancing_force_kd: 100.0
     balancing_torque_kp: 500.0
-    balancing_torque_kd: 100.0
+    balancing_torque_kd: 300.0
 
-    mass: 0.0
-    min_normal_force: 1.0
-    max_normal_force: 50.0
-    friction_coefficient: 1.0
+    mass: 3.0
+    min_normal_force: 0.1
+    max_normal_force: 30.0
+    friction_coefficient: 0.5
 
 
-    stand_controller_max_body_vel: 10000.0 #0.1 #10000.0
+    stand_controller_max_body_vel: 0.0 #10000.0
     stand_controller_max_body_angvel: 9999.0
 
     body_pos_smoothing: 1.0

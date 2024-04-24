@@ -95,6 +95,18 @@ heuristic_controller:
     description: 'Footstep height above the ground.'
   }
 
+  footstep_gain: {
+    type: double,
+    default_value: 0.03,
+    description: 'Gain for the footstep controller'
+  }
+
+  max_footstep_distance: {
+    type: double,
+    default_value: 0.05,
+    description: 'Maximum distance the foot can move in one step'
+  }
+
   phase_offsets: {
     type: double_array,
     default_value: [0.0, 0.5, 0.5, 0.0],
