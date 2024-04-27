@@ -320,6 +320,7 @@ controller_interface::return_type HeuristicController::update(
     return controller_interface::return_type::ERROR;
   }
 
+
   for (int i = 0; i < 4; i++) {
     curr_control_step_state.foot_pos_in_world.col(i) = curr_control_step_state.body_pos_in_world + curr_control_step_state.foot_pos_in_body_rotated.col(i);
     curr_control_step_state.foot_vel_in_world.col(i) = curr_control_step_state.body_vel_in_world + curr_control_step_state.foot_vel_in_body_rotated.col(i);
@@ -423,8 +424,9 @@ controller_interface::return_type HeuristicController::update(
   // curr_control_step_state.balancing_forces_in_world = balancingLinearSolve(curr_control_step_state.foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
   // curr_control_step_state.balancing_forces_in_world = Eigen::Matrix<double, 3, 4>::Zero();
 
-  if (body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {
-    RCLCPP_INFO(get_node()->get_logger(), "Balancing forces are too large, stopping the robot");
+  Eigen::Vector3d up_vector = curr_control_step_state.body_rot_in_world * Eigen::Vector3d::UnitZ();
+  if (up_vector.z() < std::cos(params_.max_tip_angle) || body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {
+    RCLCPP_INFO(get_node()->get_logger(), "Performing emergency stop");
     curr_control_step_state.state = locomotion_state::STOP;
     curr_control_step_state.balancing_forces_in_world.setZero();
   }

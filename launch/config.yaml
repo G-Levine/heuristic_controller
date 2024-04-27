@@ -43,3 +43,5 @@ heuristic_controller:
 
     body_pos_smoothing: 0.0
     body_vel_smoothing: 0.99
+
+    # max_tip_angle: 1.0

@@ -59,6 +59,12 @@ heuristic_controller:
     description: 'Velocity gains for the joints in stance phase'
   }
 
+  max_tip_angle: {
+    type: double,
+    default_value: 1.0,
+    description: 'Maximum angle (rad) allowed before the controller performs an emergency stop'
+  }
+
   init_duration: {
     type: double,
     default_value: 2.0,
