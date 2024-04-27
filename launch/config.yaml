@@ -10,12 +10,12 @@ heuristic_controller:
     gait_frequency: 2.0 #0.00001
     # phase_offsets: [0.0, 0.25, 0.5, 0.75]
     # phase_offsets: [0.0, 0.1, 0.5, 0.6]
-    # swing_durations: [0.4, 0.4, 0.4, 0.4]
+    # swing_durations: [0.2, 0.2, 0.2, 0.2]
 
     # foot_x_origins: [0.075, 0.075, -0.075, -0.075]
     # foot_y_origins: [-0.075, 0.075, -0.075, 0.075]
 
-    footstep_gain: 0.01
+    footstep_gain: 0.03
     max_footstep_distance: 0.075 #.1
 
     body_height: 0.15
@@ -41,5 +41,5 @@ heuristic_controller:
     stand_controller_max_body_vel: 0.0 #75     #10000.0
     stand_controller_max_body_angvel: 0.0
 
-    body_pos_smoothing: 1.0
-    body_vel_smoothing: 1.0
+    body_pos_smoothing: 0.0
+    body_vel_smoothing: 0.99

@@ -174,6 +174,7 @@ controller_interface::return_type HeuristicController::update(
                    .get()
                    .get_value();
     curr_control_step_state.body_accel_in_world = curr_control_step_state.body_rot_in_world * body_accel_in_body;
+    curr_control_step_state.body_accel_in_world.z() -= 9.81;
 
     // read joint states from hardware interface
     for (int i = 0; i < 4; i++) {
@@ -267,34 +268,51 @@ controller_interface::return_type HeuristicController::update(
   // curr_control_step_state.body_pos_in_world = curr_control_step_state.contact_centroid_pos_in_world - contact_centroid_pos_in_body_rotated;
   curr_control_step_state.body_pos_in_world = params_.body_pos_smoothing * prev_control_step_state_.body_pos_in_world + (1 - params_.body_pos_smoothing) * (curr_control_step_state.contact_centroid_pos_in_world - contact_centroid_pos_in_body_rotated);
   // curr_control_step_state.body_vel_in_world = -contact_centroid_vel_in_body_rotated;
-  curr_control_step_state.body_vel_in_world = params_.body_vel_smoothing * prev_control_step_state_.body_vel_in_world + (1 - params_.body_vel_smoothing) * (-contact_centroid_vel_in_body_rotated);
+  // curr_control_step_state.body_vel_in_world = params_.body_vel_smoothing * prev_control_step_state_.body_vel_in_world + (1 - params_.body_vel_smoothing) * (-contact_centroid_vel_in_body_rotated);
+  curr_control_step_state.body_vel_in_world = prev_control_step_state_.body_vel_in_world +
+                                              params_.body_vel_smoothing * period.seconds() * curr_control_step_state.body_accel_in_world +
+                                              (1 - params_.body_vel_smoothing) * (-contact_centroid_vel_in_body_rotated - prev_control_step_state_.body_vel_in_world);
 
   // Override state estimation with ground truth from simulator
   try {
-    curr_control_step_state.body_pos_in_world(0) = state_interfaces_map_.at("mujoco_sensor")
-                        .at("body_pos.x")
-                        .get()
-                        .get_value();
-    curr_control_step_state.body_pos_in_world(1) = state_interfaces_map_.at("mujoco_sensor")
-                        .at("body_pos.y")
-                        .get()
-                        .get_value();
-    curr_control_step_state.body_pos_in_world(2) = state_interfaces_map_.at("mujoco_sensor")
-                        .at("body_pos.z")
-                        .get()
-                        .get_value();
-    curr_control_step_state.body_vel_in_world(0) = state_interfaces_map_.at("mujoco_sensor")
+    Eigen::Vector3d true_body_vel_in_world;
+    true_body_vel_in_world.x() = state_interfaces_map_.at("mujoco_sensor")
                         .at("body_vel.x")
                         .get()
                         .get_value();
-    curr_control_step_state.body_vel_in_world(1) = state_interfaces_map_.at("mujoco_sensor")
+    true_body_vel_in_world.y() = state_interfaces_map_.at("mujoco_sensor")
                         .at("body_vel.y")
                         .get()
                         .get_value();
-    curr_control_step_state.body_vel_in_world(2) = state_interfaces_map_.at("mujoco_sensor")
+    true_body_vel_in_world.z() = state_interfaces_map_.at("mujoco_sensor")
                         .at("body_vel.z")
                         .get()
                         .get_value();
+    // curr_control_step_state.body_pos_in_world(0) = state_interfaces_map_.at("mujoco_sensor")
+    //                     .at("body_pos.x")
+    //                     .get()
+    //                     .get_value();
+    // curr_control_step_state.body_pos_in_world(1) = state_interfaces_map_.at("mujoco_sensor")
+    //                     .at("body_pos.y")
+    //                     .get()
+    //                     .get_value();
+    // curr_control_step_state.body_pos_in_world(2) = state_interfaces_map_.at("mujoco_sensor")
+    //                     .at("body_pos.z")
+    //                     .get()
+    //                     .get_value();
+    // curr_control_step_state.body_vel_in_world(0) = state_interfaces_map_.at("mujoco_sensor")
+    //                     .at("body_vel.x")
+    //                     .get()
+    //                     .get_value();
+    // curr_control_step_state.body_vel_in_world(1) = state_interfaces_map_.at("mujoco_sensor")
+    //                     .at("body_vel.y")
+    //                     .get()
+    //                     .get_value();
+    // curr_control_step_state.body_vel_in_world(2) = state_interfaces_map_.at("mujoco_sensor")
+    //                     .at("body_vel.z")
+    //                     .get()
+    //                     .get_value();
+    // std::cout << "Difference in body vel: " << (true_body_vel_in_world - curr_control_step_state.body_vel_in_world).norm() << std::endl;
   }
   catch (const std::exception &e) {
     fprintf(stderr, "Exception thrown during update stage with message: %s \n",
