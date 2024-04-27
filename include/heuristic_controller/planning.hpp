@@ -12,7 +12,7 @@ std::tuple<double, double, double> getFutureBodyState(double t, double x0,
   theta_t = theta0 + omega * t;
 
   // Handle the omega = 0 case separately to avoid division by zero
-  if (std::abs(omega) < 1e-9) {  // Use a small threshold to consider as zero
+  if (std::abs(omega) < 1e-3) {  // Use a small threshold to consider as zero
     x_t = x0 + vx * t;           // Linear motion
     y_t = y0 + vy * t;
   } else {
@@ -98,15 +98,15 @@ std::tuple<Eigen::Vector3d, Eigen::Vector3d> calculateSwingFootPosVel(
     double foot_x_offset, double foot_y_offset, const Eigen::Vector3d& foot_p0,
     const Eigen::Vector3d& foot_v0, double footstep_gain, double max_footstep_distance) {
   // Calculate the body state at the end of the swing phase
-  auto [xf, yf, yawf] =
-      getFutureBodyState(tf - t, x, y, yaw, vx, vy, yaw_vel);
+  // auto [xf, yf, yawf] =
+  //     getFutureBodyState(tf - t, x, y, yaw, vx, vy, yaw_vel);
   // Calculate the linear offset of the next foothold disregarding yaw
   double x_offset =
       getNextFootholdRelativeToBody(stance_time, body_height, vx, vx_des, footstep_gain);
   double y_offset =
       getNextFootholdRelativeToBody(stance_time, body_height, vy, vy_des, footstep_gain);
   // Apply the effect of yaw to the next foothold
-  double foothold_yaw = yawf + 0.5 * stance_time * yaw_vel_des;
+  double foothold_yaw = yaw; //yawf; // + 0.5 * stance_time * yaw_vel_des;
   double x_offset_rot =
       foot_x_offset * cos(foothold_yaw) - foot_y_offset * sin(foothold_yaw);
   double y_offset_rot =

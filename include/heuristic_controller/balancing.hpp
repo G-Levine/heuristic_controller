@@ -93,7 +93,7 @@ Eigen::Matrix<double, 3, 4> balancingQP(const Eigen::Matrix<double, 3, 4>& r,
                                                    const Eigen::Vector3d& tau_desired,
                                                    const Eigen::Matrix<double, 3, 4>& f_previous,
                                                    double f_z_min, double f_z_max, double mu,
-                                                   double weight_f = 1.0, double weight_tau = 1.0, double weight_diff = 0.1, double weight_mag = 0.01) {
+                                                   double weight_f = 1.0, double weight_tau = 1.0, double weight_diff = 0.0, double weight_mag = 0.001) {
     // Check if no legs are in contact
     if (s.sum() == 0) {
         return Eigen::Matrix<double, 3, 4>::Zero();

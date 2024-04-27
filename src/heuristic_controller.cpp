@@ -155,6 +155,12 @@ controller_interface::return_type HeuristicController::update(
                   .get_value();
     curr_control_step_state.body_angvel_in_world = curr_control_step_state.body_rot_in_world * body_angvel_in_body;                      
 
+    // curr_control_step_state.body_rot_in_world.x() = 0.0;
+    // curr_control_step_state.body_rot_in_world.y() = 0.0;
+    // curr_control_step_state.body_rot_in_world.z() = 0.0;
+    // curr_control_step_state.body_rot_in_world.w() = 1.0;
+    // curr_control_step_state.body_angvel_in_world.setZero();
+
     body_accel_in_body.x() = state_interfaces_map_.at(params_.imu_sensor_name)
                    .at("linear_acceleration.x")
                    .get()
@@ -206,9 +212,9 @@ controller_interface::return_type HeuristicController::update(
     // control_step_inputs_.body_pos_in_world_desired += control_step_inputs_.body_vel_in_world_desired * period.seconds();
 
     // Update the desired body orientation
-    Eigen::AngleAxisd rot_delta(control_step_inputs_.body_angvel_in_world_desired.norm() * period.seconds(), control_step_inputs_.body_angvel_in_world_desired.normalized());
-    control_step_inputs_.body_rot_in_world_desired = curr_control_step_state.body_rot_in_world * rot_delta;
-    control_step_inputs_.body_rot_in_world_desired = control_step_inputs_.body_rot_in_world_desired.normalized();
+    // Eigen::AngleAxisd rot_delta(control_step_inputs_.body_angvel_in_world_desired.norm() * period.seconds(), control_step_inputs_.body_angvel_in_world_desired.normalized());
+    // control_step_inputs_.body_rot_in_world_desired = curr_control_step_state.body_rot_in_world * rot_delta;
+    // control_step_inputs_.body_rot_in_world_desired = control_step_inputs_.body_rot_in_world_desired.normalized();
   }
 
   // Handle swing and stance phase transitions
@@ -219,7 +225,7 @@ controller_interface::return_type HeuristicController::update(
         if (curr_control_step_state.global_time > prev_control_step_state_.swing_tfs(i)) {
           // Switch to stance phase
           curr_control_step_state.contact_states(i) = 1;
-          RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from swing to stance", i);
+          // RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from swing to stance", i);
         } else {
           // Continue in swing phase
           curr_control_step_state.contact_states(i) = 0;
@@ -230,7 +236,7 @@ controller_interface::return_type HeuristicController::update(
         if (is_new_phase) {
           // Switch to swing phase
           curr_control_step_state.contact_states(i) = 0;
-          RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from stance to swing", i);
+          // RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from stance to swing", i);
         } else {
           // Continue in stance phase
           curr_control_step_state.contact_states(i) = 1;
@@ -301,7 +307,8 @@ controller_interface::return_type HeuristicController::update(
     curr_control_step_state.foot_vel_in_world.col(i) = curr_control_step_state.body_vel_in_world + curr_control_step_state.foot_vel_in_body_rotated.col(i);
   }
 
-  bool is_curr_state_capturable_by_stand_controller = (curr_control_step_state.body_vel_in_world.norm() < params_.stand_controller_max_body_vel) && (curr_control_step_state.body_angvel_in_world.norm() < params_.stand_controller_max_body_angvel);
+  bool is_curr_state_capturable_by_stand_controller = (curr_control_step_state.body_vel_in_world.norm() < params_.stand_controller_max_body_vel * 0.5) && (curr_control_step_state.body_angvel_in_world.norm() < params_.stand_controller_max_body_angvel * 0.5);
+  bool is_curr_state_not_capturable_by_stand_controller = (curr_control_step_state.body_vel_in_world.norm() > params_.stand_controller_max_body_vel * 2.0) || (curr_control_step_state.body_angvel_in_world.norm() > params_.stand_controller_max_body_angvel * 2.0);
 
   // Locomotion state machine
   if (prev_control_step_state_.state == locomotion_state::INIT) {
@@ -319,6 +326,7 @@ controller_interface::return_type HeuristicController::update(
     curr_control_step_state.joint_torque_desired.setZero();
     curr_control_step_state.joint_kp_desired.setZero();
     curr_control_step_state.joint_kd_desired.setZero();
+    curr_control_step_state.foot_pos_in_body_rotated_desired = curr_control_step_state.foot_pos_in_body_rotated;
     prev_control_step_state_ = curr_control_step_state;
     RCLCPP_INFO(get_node()->get_logger(), "Switching from init to stand");
     return controller_interface::return_type::OK;
@@ -337,7 +345,7 @@ controller_interface::return_type HeuristicController::update(
       control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
     }
 
-    if (!is_curr_state_capturable_by_stand_controller) {
+    if (is_curr_state_not_capturable_by_stand_controller) {
       curr_control_step_state.state = locomotion_state::WALK;
       RCLCPP_INFO(get_node()->get_logger(), "Switching from stand to walk");
     }
@@ -368,20 +376,33 @@ controller_interface::return_type HeuristicController::update(
   Eigen::Vector3d body_vel_error = control_step_inputs_.body_vel_in_world_desired - curr_control_step_state.body_vel_in_world;
   Eigen::Quaterniond q_error = control_step_inputs_.body_rot_in_world_desired * curr_control_step_state.body_rot_in_world.inverse();
   q_error.normalize();
-  Eigen::AngleAxisd angle_axis_error(q_error);
-  Eigen::Vector3d body_rot_error = angle_axis_error.axis() * angle_axis_error.angle();
+  // Eigen::AngleAxisd angle_axis_error(q_error);
+  // Eigen::Vector3d body_rot_error = angle_axis_error.axis() * angle_axis_error.angle();
+  Eigen::Vector3d body_rot_error;
+  int w_sign = (q_error.w() > 0.0) - (q_error.w() < 0.0);
+  body_rot_error.x() = w_sign * 2.0 * q_error.x();
+  body_rot_error.y() = w_sign * 2.0 * q_error.y();
+  body_rot_error.z() = w_sign * 2.0 * q_error.z();
   Eigen::Vector3d body_angvel_error = control_step_inputs_.body_angvel_in_world_desired - curr_control_step_state.body_angvel_in_world;
   Eigen::Vector3d gravity_compensation = Eigen::Vector3d::UnitZ() * params_.mass * 9.81;
 
   // body_pos_error(0) = 0.0;
   // body_pos_error(1) = 0.0;
-  body_rot_error(2) = 0.0;
+  // body_rot_error(2) = 0.0;
+  // body_vel_error(0) = 0.0;
+  // body_vel_error(1) = 0.0;
 
   Eigen::Vector3d balancing_force_desired = gravity_compensation + body_pos_error * params_.balancing_force_kp + body_vel_error * params_.balancing_force_kd;
   Eigen::Vector3d balancing_torque_desired = body_rot_error * params_.balancing_torque_kp + body_angvel_error * params_.balancing_torque_kd;
 
+  // Clamp the desired balancing forces and torques
+  double max_balance_force = 100.0;
+  balancing_force_desired = balancing_force_desired * (std::min(balancing_force_desired.norm(), max_balance_force) / balancing_force_desired.norm());
+  double max_balance_torque = 100.0;
+  balancing_torque_desired = balancing_torque_desired * (std::min(balancing_torque_desired.norm(), max_balance_torque) / balancing_torque_desired.norm());
+
   curr_control_step_state.balancing_forces_in_world = balancingQP(curr_control_step_state.foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
-  // curr_control_step_state.balancing_forces_in_world = balancingLinearSolve(foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
+  // curr_control_step_state.balancing_forces_in_world = balancingLinearSolve(curr_control_step_state.foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
   // curr_control_step_state.balancing_forces_in_world = Eigen::Matrix<double, 3, 4>::Zero();
 
   if (body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {
@@ -408,6 +429,8 @@ controller_interface::return_type HeuristicController::update(
   // std::cout << "Foot vel in body rotated: \n" << curr_control_step_state.foot_vel_in_body_rotated << std::endl;
   // std::cout << "Joint angles: \n" << curr_control_step_state.joint_pos << std::endl;
   // std::cout << "Joint velocities: \n" << curr_control_step_state.joint_vel << std::endl;
+  // std::cout << "Balancing force desired: \n" << balancing_force_desired << std::endl;
+  // std::cout << "Balancing torque desired: \n" << balancing_torque_desired << std::endl;
   // std::cout << "Balancing forces: \n" << curr_control_step_state.balancing_forces_in_world << std::endl;
 
   // Obtain the desired actuator commands for each leg depending on whether it's in swing or stance
@@ -425,7 +448,7 @@ controller_interface::return_type HeuristicController::update(
           // Begin the swing trajectory from the current foot position
           curr_control_step_state.swing_t0s(i) = curr_control_step_state.global_time;
           curr_control_step_state.swing_tfs(i) = curr_control_step_state.global_time + params_.swing_durations[i] / params_.gait_frequency;
-          curr_control_step_state.swing_x0s.col(i) = curr_control_step_state.foot_pos_in_body_rotated.col(i);
+          curr_control_step_state.swing_x0s.col(i) = prev_control_step_state_.foot_pos_in_body_rotated_desired.col(i);
           curr_control_step_state.swing_v0s.col(i) = curr_control_step_state.foot_vel_in_body_rotated.col(i);
         } else {
           // Continuing in swing phase
@@ -443,6 +466,7 @@ controller_interface::return_type HeuristicController::update(
         // auto[foot_pos_in_world_desired, foot_vel_in_world_desired] = calculateSwingFootPosVel(curr_control_step_state.global_time, curr_control_step_state.swing_t0s(i), curr_control_step_state.swing_tfs(i), stance_time, params_.body_height, params_.swing_height, curr_control_step_state.body_pos_in_world(0), curr_control_step_state.body_pos_in_world(1), body_yaw, curr_control_step_state.body_vel_in_world(0), curr_control_step_state.body_vel_in_world(1), curr_control_step_state.body_angvel_in_world(2), control_step_inputs_.body_vel_in_world_desired(0), control_step_inputs_.body_vel_in_world_desired(1), control_step_inputs_.body_angvel_in_world_desired(2), params_.foot_x_origins[i], params_.foot_y_origins[i], curr_control_step_state.swing_x0s.col(i), curr_control_step_state.swing_v0s.col(i), params_.footstep_gain, params_.max_footstep_distance);
         curr_control_step_state.swing_x0s.col(i).z() = -params_.body_height;
         auto[foot_pos_in_body_rotated_desired, foot_vel_in_world_desired] = calculateSwingFootPosVel(curr_control_step_state.global_time, curr_control_step_state.swing_t0s(i), curr_control_step_state.swing_tfs(i), stance_time, params_.body_height, params_.swing_height, curr_control_step_state.body_pos_in_world(0), curr_control_step_state.body_pos_in_world(1), body_yaw, curr_control_step_state.body_vel_in_world(0), curr_control_step_state.body_vel_in_world(1), curr_control_step_state.body_angvel_in_world(2), control_step_inputs_.body_vel_in_world_desired(0), control_step_inputs_.body_vel_in_world_desired(1), control_step_inputs_.body_angvel_in_world_desired(2), params_.foot_x_origins[i], params_.foot_y_origins[i], curr_control_step_state.swing_x0s.col(i), curr_control_step_state.swing_v0s.col(i), params_.footstep_gain, params_.max_footstep_distance);
+        curr_control_step_state.foot_pos_in_body_rotated_desired.col(i) = foot_pos_in_body_rotated_desired;
         // std::cout << "Foot pos in body rotated desired: \n" << foot_pos_in_body_rotated_desired << std::endl;
         // std::cout << "Swing x0: \n" << curr_control_step_state.swing_x0s.col(i) << std::endl;
 
@@ -451,7 +475,8 @@ controller_interface::return_type HeuristicController::update(
         foot_pos_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * foot_pos_in_body_rotated_desired;
 
         // Calculate the desired foot velocity in body frame
-        foot_vel_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_vel_in_world_desired - curr_control_step_state.body_vel_in_world - curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_body_rotated_desired));
+        // foot_vel_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_vel_in_world_desired - curr_control_step_state.body_vel_in_world - curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_body_rotated_desired));
+        foot_vel_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * (foot_vel_in_world_desired - curr_control_step_state.body_angvel_in_world.cross(foot_pos_in_body_rotated_desired));
 
         // Calculate the desired joint velocities
         curr_control_step_state.joint_vel_desired.col(i) = jacobians[i].inverse() * foot_vel_in_body_desired.col(i);
@@ -462,6 +487,10 @@ controller_interface::return_type HeuristicController::update(
         curr_control_step_state.joint_kd_desired.col(i) = Eigen::Vector3d::Ones() * params_.swing_joint_kd;
         curr_control_step_state.joint_torque_desired.col(i) = Eigen::Vector3d::Zero();
       } else {
+        curr_control_step_state.foot_pos_in_body_rotated_desired.col(i) = prev_control_step_state_.foot_pos_in_body_rotated_desired.col(i);
+        curr_control_step_state.foot_pos_in_body_rotated_desired.col(i) -= control_step_inputs_.body_vel_in_world_desired * period.seconds();
+
+        foot_pos_in_body_desired.col(i) = curr_control_step_state.body_rot_in_world.inverse() * curr_control_step_state.foot_pos_in_body_rotated_desired.col(i);
         // Leg is in stance phase
         // Determine joint feedforward torques from the balancing forces
         curr_control_step_state.joint_torque_desired.col(i) = jacobians[i].transpose() * curr_control_step_state.body_rot_in_world.inverse() * curr_control_step_state.balancing_forces_in_world.col(i);
@@ -485,13 +514,13 @@ controller_interface::return_type HeuristicController::update(
     // std::cout << std::endl;
 
     // Apply IK to obtain the desired joint positions
-    // curr_control_step_state.joint_pos_desired = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
-    Eigen::Matrix<double, 3, 4> ik_joint_pos = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
-    for (int i = 0; i < 4; i++) {
-      if (curr_control_step_state.contact_states(i) == 0) {
-        curr_control_step_state.joint_pos_desired.col(i) = ik_joint_pos.col(i);
-      }
-    }
+    curr_control_step_state.joint_pos_desired = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
+    // Eigen::Matrix<double, 3, 4> ik_joint_pos = four_legs_ik(foot_pos_in_body_desired, curr_control_step_state.joint_pos);
+    // for (int i = 0; i < 4; i++) {
+    //   if (curr_control_step_state.contact_states(i) == 0) {
+    //     curr_control_step_state.joint_pos_desired.col(i) = ik_joint_pos.col(i);
+    //   }
+    // }
 
     // curr_control_step_state.joint_pos_desired.setZero();
     // std::cout << "Desired joint positions: \n" << curr_control_step_state.joint_pos_desired << std::endl;

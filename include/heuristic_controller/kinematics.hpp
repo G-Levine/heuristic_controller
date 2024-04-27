@@ -111,6 +111,11 @@ Eigen::Vector3d leg_ik(const Eigen::Vector3d& target_pos, const LegConfig& confi
 
         guess += step;
 
+        // Constrain the hip abduction
+        guess(1) = std::clamp(guess(1), -M_PI / 2.0, M_PI / 2.0);
+        // Constrain the knee angle to prevent overextension
+        guess(2) = std::clamp(guess(2), -5.0 * M_PI / 6.0, -M_PI / 6.0);
+
         if (error.norm() < 1e-6) {
             break;
         }
@@ -283,8 +288,11 @@ Eigen::Vector3d calculateAverageContactValue(const Eigen::Matrix<double, 3, 4>& 
 
 float extractYawFromQuaternion(const Eigen::Quaterniond& quat) {
     // Convert the quaternion to Euler angles (yaw, pitch, roll)
-    Eigen::Vector3d euler = quat.toRotationMatrix().eulerAngles(2, 1, 0); // ZYX convention
-    return euler[0]; // First component is yaw in ZYX convention
+    // Eigen::Vector3d euler = quat.toRotationMatrix().eulerAngles(2, 1, 0); // ZYX convention
+    // return euler[0]; // First component is yaw in ZYX convention
+    Eigen::Vector3d forward = quat * Eigen::Vector3d::UnitX();
+    double xy_norm = std::sqrt(std::pow(forward.x(), 2) + std::pow(forward.y(), 2));
+    return std::atan2(forward.y() / xy_norm, forward.x() / xy_norm);
 }
 
 Eigen::Quaterniond extractYawQuaternion(const Eigen::Quaterniond& originalQuat) {
@@ -294,6 +302,7 @@ Eigen::Quaterniond extractYawQuaternion(const Eigen::Quaterniond& originalQuat) 
     // Create a new quaternion with only the yaw component
     Eigen::AngleAxisd yawRotation(yaw, Eigen::Vector3d::UnitZ()); // Rotation around Z-axis
     Eigen::Quaterniond yawQuat(yawRotation);
+    yawQuat.normalize();
 
     return yawQuat;
 }
