@@ -427,6 +427,11 @@ controller_interface::return_type HeuristicController::update(
   Eigen::Vector3d up_vector = curr_control_step_state.body_rot_in_world * Eigen::Vector3d::UnitZ();
   if (up_vector.z() < std::cos(params_.max_tip_angle) || body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {
     RCLCPP_INFO(get_node()->get_logger(), "Performing emergency stop");
+    RCLCPP_INFO(get_node()->get_logger(), "Current body tip angle: %f", std::acos(up_vector.z()));
+    RCLCPP_INFO(get_node()->get_logger(), "Current body pos error: %f", body_pos_error.norm());
+    RCLCPP_INFO(get_node()->get_logger(), "Current body vel error: %f", body_vel_error.norm());
+    RCLCPP_INFO(get_node()->get_logger(), "Current body rot error: %f", body_rot_error.norm());
+    RCLCPP_INFO(get_node()->get_logger(), "Current body angvel error: %f", body_angvel_error.norm());
     curr_control_step_state.state = locomotion_state::STOP;
     curr_control_step_state.balancing_forces_in_world.setZero();
   }
