@@ -315,9 +315,9 @@ controller_interface::return_type HeuristicController::update(
     // std::cout << "Difference in body vel: " << (true_body_vel_in_world - curr_control_step_state.body_vel_in_world).norm() << std::endl;
   }
   catch (const std::exception &e) {
-    fprintf(stderr, "Exception thrown during update stage with message: %s \n",
-            e.what());
-    return controller_interface::return_type::ERROR;
+    // fprintf(stderr, "Exception thrown during update stage with message: %s \n",
+    //         e.what());
+    // return controller_interface::return_type::ERROR;
   }
 
 
