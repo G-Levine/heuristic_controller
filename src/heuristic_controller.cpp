@@ -77,6 +77,7 @@ controller_interface::CallbackReturn HeuristicController::on_activate(
   // }
 
   init_time_ = get_node()->now();
+  gait_start_time_ = get_node()->now();
 
   // Initialize the command subscriber
   cmd_subscriber_ = get_node()->create_subscription<CmdType>(
@@ -115,10 +116,13 @@ controller_interface::CallbackReturn HeuristicController::on_deactivate(
 
 controller_interface::return_type HeuristicController::update(
     const rclcpp::Time &time, const rclcpp::Duration &period) {
-
+  //std::cout << period.seconds() << std::endl;
   control_step_state curr_control_step_state;
   curr_control_step_state.global_time = (time - init_time_).seconds();
-
+  for (int i = 0; i < 4; i++) {
+    curr_control_step_state.gait_phases(i) = -params_.phase_offsets[i] + (time - gait_start_time_).seconds() * params_.gait_frequency;
+  }
+    
   // Get the latest observation
   Eigen::Vector3d body_angvel_in_body;
   Eigen::Vector3d body_accel_in_body;
@@ -226,18 +230,18 @@ controller_interface::return_type HeuristicController::update(
         if (curr_control_step_state.global_time > prev_control_step_state_.swing_tfs(i)) {
           // Switch to stance phase
           curr_control_step_state.contact_states(i) = 1;
-          // RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from swing to stance", i);
+          RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from swing to stance, gait phase: %f", i, curr_control_step_state.gait_phases(i));
         } else {
           // Continue in swing phase
           curr_control_step_state.contact_states(i) = 0;
         }
       } else {
         // Leg is in stance phase
-        bool is_new_phase = (prev_control_step_state_.gait_phases(i) > 0.0) && (fmod(prev_control_step_state_.gait_phases(i), 1.0) < params_.swing_durations[i]);
+        bool is_new_phase = (curr_control_step_state.gait_phases(i) > 0.0) && (fmod(curr_control_step_state.gait_phases(i), 1.0) < params_.swing_durations[i]);
         if (is_new_phase) {
           // Switch to swing phase
           curr_control_step_state.contact_states(i) = 0;
-          // RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from stance to swing", i);
+          RCLCPP_INFO(get_node()->get_logger(), "Switching leg %d from stance to swing, gait phase: %f", i, curr_control_step_state.gait_phases(i));
         } else {
           // Continue in stance phase
           curr_control_step_state.contact_states(i) = 1;
@@ -270,11 +274,13 @@ controller_interface::return_type HeuristicController::update(
   // curr_control_step_state.body_vel_in_world = -contact_centroid_vel_in_body_rotated;
   // curr_control_step_state.body_vel_in_world = params_.body_vel_smoothing * prev_control_step_state_.body_vel_in_world + (1 - params_.body_vel_smoothing) * (-contact_centroid_vel_in_body_rotated);
   curr_control_step_state.body_vel_in_world = prev_control_step_state_.body_vel_in_world +
-                                              params_.body_vel_smoothing * period.seconds() * curr_control_step_state.body_accel_in_world +
+                                              params_.body_vel_smoothing * std::min(period.seconds(), 0.1) * curr_control_step_state.body_accel_in_world +
                                               (1 - params_.body_vel_smoothing) * (-contact_centroid_vel_in_body_rotated - prev_control_step_state_.body_vel_in_world);
-
+//  std::cout << "Body acceleration: \n" << curr_control_step_state.body_accel_in_world << std::endl;
+//std::cout << "Body acceleration in body: \n" << body_accel_in_body << std::endl;
+//std::cout << "Body angvel in body: \n" << body_angvel_in_body << std::endl;
   // Override state estimation with ground truth from simulator
-  try {
+/*  try {
     Eigen::Vector3d true_body_vel_in_world;
     true_body_vel_in_world.x() = state_interfaces_map_.at("mujoco_sensor")
                         .at("body_vel.x")
@@ -319,7 +325,7 @@ controller_interface::return_type HeuristicController::update(
     //         e.what());
     // return controller_interface::return_type::ERROR;
   }
-
+*/
 
   for (int i = 0; i < 4; i++) {
     curr_control_step_state.foot_pos_in_world.col(i) = curr_control_step_state.body_pos_in_world + curr_control_step_state.foot_pos_in_body_rotated.col(i);
@@ -347,13 +353,14 @@ controller_interface::return_type HeuristicController::update(
     curr_control_step_state.joint_kd_desired.setZero();
     curr_control_step_state.foot_pos_in_body_rotated_desired = curr_control_step_state.foot_pos_in_body_rotated;
     prev_control_step_state_ = curr_control_step_state;
+    gait_start_time_ = time;
     RCLCPP_INFO(get_node()->get_logger(), "Switching from init to stand");
     return controller_interface::return_type::OK;
   } else if (prev_control_step_state_.state == locomotion_state::STAND) {
     // Reset the gait phases
-    for (int i = 0; i < 4; i++) {
-      curr_control_step_state.gait_phases(i) = -params_.phase_offsets[i];
-    }
+    //for (int i = 0; i < 4; i++) {
+    //  curr_control_step_state.gait_phases(i) = -params_.phase_offsets[i];
+    //}
     if (prev_control_step_state_.contact_states.sum() == 4) {
       // If all legs are in stance, set the desired body position to be centered above the contact centroid
       control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.contact_centroid_pos_in_world(0);
@@ -363,6 +370,7 @@ controller_interface::return_type HeuristicController::update(
       control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
       control_step_inputs_.body_pos_in_world_desired(1) = curr_control_step_state.body_pos_in_world(1);
     }
+    gait_start_time_ = time;
 
     if (is_curr_state_not_capturable_by_stand_controller) {
       curr_control_step_state.state = locomotion_state::WALK;
@@ -370,7 +378,7 @@ controller_interface::return_type HeuristicController::update(
     }
   } else if (prev_control_step_state_.state == locomotion_state::WALK) {
     // Update the gait phases
-    curr_control_step_state.gait_phases = prev_control_step_state_.gait_phases + Eigen::Vector4d::Ones() * params_.gait_frequency * period.seconds();
+    //curr_control_step_state.gait_phases = prev_control_step_state_.gait_phases + Eigen::Vector4d::Ones() * params_.gait_frequency * period.seconds();
 
     // Nullify the x and y effects of the body position controller
     control_step_inputs_.body_pos_in_world_desired(0) = curr_control_step_state.body_pos_in_world(0);
@@ -422,7 +430,7 @@ controller_interface::return_type HeuristicController::update(
 
   curr_control_step_state.balancing_forces_in_world = balancingQP(curr_control_step_state.foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
   // curr_control_step_state.balancing_forces_in_world = balancingLinearSolve(curr_control_step_state.foot_pos_in_body_rotated, curr_control_step_state.contact_states, balancing_force_desired, balancing_torque_desired, prev_control_step_state_.balancing_forces_in_world, params_.min_normal_force, params_.max_normal_force, params_.friction_coefficient);
-  // curr_control_step_state.balancing_forces_in_world = Eigen::Matrix<double, 3, 4>::Zero();
+  //curr_control_step_state.balancing_forces_in_world = Eigen::Matrix<double, 3, 4>::Zero();
 
   Eigen::Vector3d up_vector = curr_control_step_state.body_rot_in_world * Eigen::Vector3d::UnitZ();
   if (up_vector.z() < std::cos(params_.max_tip_angle) || body_pos_error.norm() > 1e2 || body_vel_error.norm() > 1e2 || body_rot_error.norm() > 1e2 || body_angvel_error.norm() > 1e2) {

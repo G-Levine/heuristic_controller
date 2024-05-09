@@ -134,6 +134,7 @@ class HeuristicController : public controller_interface::ControllerInterface {
   control_step_inputs control_step_inputs_;
 
   rclcpp::Time init_time_;
+  rclcpp::Time gait_start_time_;
 };
 
 }  // namespace heuristic_controller
